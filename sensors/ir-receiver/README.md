@@ -17,7 +17,9 @@ IR Receiver Module เป็นเซนเซอร์รับสัญญา�
 |-------------|-------|------------------------------|
 | VCC         | แดง   | 5V                           |
 | GND         | ดำ/น้ำตาล | GND                       |
-| OUT (DATA)  | เหลือง | D2 หรือ D3                  |
+| OUT (DATA)  | เหลือง | D3 หรือ A0 (D14)            |
+
+> **⚠️ หมายเหตุ:** D3 ใช้โดย Onboard Buzzer ของ Lotus Nano Bot หากต้องการหลีกเลี่ยงให้ใช้ A0 (D14)
 
 ## การต่อสายไฟ
 
@@ -26,7 +28,7 @@ IR Receiver              Lotus Nano Bot
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 VCC  ──────────────────► 5V
 GND  ──────────────────► GND
-OUT  ──────────────────► D2
+OUT  ──────────────────► D3
 ```
 
 ### ภาพการต่อสาย (Text Diagram)
@@ -44,7 +46,7 @@ OUT  ──────────────────► D2
         |             |             |
         |             |             |
    +----+----+   +----+----+   +----+----+
-   |   5V    |   |  GND    |   |   D2    |
+   |   5V    |   |  GND    |   |   D3    |
    |         |   |         |   |         |
    |  Lotus  |   |  Nano   |   |  Bot    |
    +---------+   +---------+   +---------+
@@ -54,11 +56,11 @@ OUT  ──────────────────► D2
 
 ```cpp
 // IR Receiver Example for Lotus Nano Bot
-// OUT -> D2
+// OUT -> D3
 
 #include <IRremote.h>
 
-#define IR_RECEIVE_PIN 2
+#define IR_RECEIVE_PIN 3
 
 IRrecv irrecv(IR_RECEIVE_PIN);
 decode_results results;
@@ -90,7 +92,7 @@ void loop() {
 ```cpp
 #include <IRremote.h>
 
-#define IR_RECEIVE_PIN 2
+#define IR_RECEIVE_PIN 3
 #define LED_PIN 13
 
 IRrecv irrecv(IR_RECEIVE_PIN);

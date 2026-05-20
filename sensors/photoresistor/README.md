@@ -17,8 +17,10 @@ Photoresistor หรือ Light Dependent Resistor (LDR) เป็นตัว�
 |-------------|-------|------------------------------|
 | VCC         | แดง   | 5V                           |
 | GND         | ดำ/น้ำตาล | GND                       |
-| DO (Digital)| เหลือง | D2 หรือ D3                  |
+| DO (Digital)| เหลือง | D3 หรือ A0 (D14)            |
 | AO (Analog) | ขาว   | A0 หรือ A1                  |
+
+> **⚠️ หมายเหตุ:** D3 ใช้โดย Onboard Buzzer ของ Lotus Nano Bot หากต้องการหลีกเลี่ยงให้ใช้ A0 (D14) สำหรับ DO
 
 ## การต่อสายไฟ
 
@@ -27,7 +29,7 @@ Photoresistor Module     Lotus Nano Bot
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 VCC  ──────────────────► 5V
 GND  ──────────────────► GND
-DO   ──────────────────► D2 (optional)
+DO   ──────────────────► D3 (optional)
 AO   ──────────────────► A0
 ```
 
@@ -46,7 +48,7 @@ AO   ──────────────────► A0
         |             |             |             |
         |             |             |             |
    +----+----+   +----+----+   +----+----+   +----+----+
-   |   5V    |   |  GND    |   |   D2    |   |   A0    |
+   |   5V    |   |  GND    |   |   D3    |   |   A0    |
    |         |   |         |   |         |   |         |
    |  Lotus  |   |  Nano   |   |  Bot    |   |         |
    +---------+   +---------+   +---------+   +---------+
@@ -57,10 +59,10 @@ AO   ──────────────────► A0
 ```cpp
 // Photoresistor / Light Sensor Example
 // สำหรับ Lotus Nano Bot
-// AO -> A0, DO -> D2
+// AO -> A0, DO -> D3
 
 #define LIGHT_ANALOG_PIN A0
-#define LIGHT_DIGITAL_PIN 2
+#define LIGHT_DIGITAL_PIN 3
 #define LED_PIN 13
 
 void setup() {

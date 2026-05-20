@@ -15,17 +15,19 @@ Tilt Switch แบบ Ball เป็นอุปกรณ์ตรวจจั�
 
 | ขา (Switch) | สีสาย | เชื่อมต่อกับ (Lotus Nano Bot) |
 |-------------|-------|------------------------------|
-| ขา 1        | สีใดก็ได้ | D2 หรือ D3 (ผ่าน Pull-up) |
+| ขา 1        | สีใดก็ได้ | D3 หรือ A0 (D14) (ผ่าน Pull-up) |
 | ขา 2        | สีใดก็ได้ | GND                         |
 
 > **สำคัญ:** ต้องต่อตัวต้านทาน Pull-up 10KΩ ระหว่างขา 1 และ 5V หรือใช้ `INPUT_PULLUP`
+>
+> **⚠️ หมายเหตุ:** D3 ใช้โดย Onboard Buzzer ของ Lotus Nano Bot หากต้องการหลีกเลี่ยงให้ใช้ A0 (D14)
 
 ## การต่อสายไฟ
 
 ```
 Tilt Switch              Lotus Nano Bot
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ขา 1 ──────────────────► D2 (ใช้ INPUT_PULLUP)
+ขา 1 ──────────────────► D3 (ใช้ INPUT_PULLUP)
 ขา 2 ──────────────────► GND
 ```
 
@@ -41,7 +43,7 @@ Tilt Switch              Lotus Nano Bot
              |      |
              |      |
         +----+----+  +----+----+
-        |   D2    |  |  GND    |
+        |   D3    |  |  GND    |
         | (Input) |  |         |
         |  Lotus  |  |  Nano   |
         |  Nano   |  |  Bot    |
@@ -52,9 +54,9 @@ Tilt Switch              Lotus Nano Bot
 
 ```cpp
 // Tilt Switch Example for Lotus Nano Bot
-// ต่อขา 1 -> D2, ขา 2 -> GND
+// ต่อขา 1 -> D3, ขา 2 -> GND
 
-#define TILT_PIN 2
+#define TILT_PIN 3
 #define LED_PIN 13
 
 void setup() {
@@ -85,7 +87,7 @@ void loop() {
 
 ```cpp
 // Tilt Alarm Example
-#define TILT_PIN 2
+#define TILT_PIN 3
 #define BUZZER_PIN 8
 
 bool alarmActive = false;

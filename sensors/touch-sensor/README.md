@@ -84,7 +84,7 @@ void loop() {
 
 ```cpp
 #define TOUCH_PIN 3
-#define RELAY_PIN 3  // หรือใช้ D3 หากต่อบัซเซอร์/LED แทน
+#define RELAY_PIN 8  // หรือใช้ D8 หากต่อบัซเซอร์/LED แทน
 
 bool state = false;
 int lastTouch = LOW;

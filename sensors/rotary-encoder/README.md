@@ -111,8 +111,10 @@ void loop() {
 
 ### โค้ดแบบใช้ Interrupt (ขั้นสูง)
 
+> **⚠️ คำเตือน:** บน Lotus Nano Bot D2 ใช้โดย Onboard Button และ D3 ใช้โดย Onboard Buzzer หากต้องการใช้ Interrupt โดยไม่ชนกับอุปกรณ์บนบอร์ด ให้ใช้ Pin Change Interrupt บนขาอื่นแทน (เช่น D8, D9)
+
 ```cpp
-#define CLK_PIN 3  // ต้องใช้ขา Interrupt (D2 หรือ D3 บน Nano)
+#define CLK_PIN 3  // ⚠️ D3=Buzzer, D2=Button บน Lotus Nano Bot (ชนกับ onboard)
 #define DT_PIN 14  // A0
 
 volatile int counter = 0;
