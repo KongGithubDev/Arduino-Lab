@@ -301,6 +301,10 @@ void loop() {
 รูปภาพเซนเซอร์และโมดูลทั้งหมดมาจาก:
 - **Instructables:** [Arduino 37 in 1 Sensors Kit Explained](https://www.instructables.com/Arduino-37-in-1-Sensors-Kit-Explained/)
 
+รูปภาพบอร์ดและข้อมูลเพิ่มเติม:
+- **avrchip.com:** [Arduino Nano Datasheet and Tutorial](http://avrchip.com/arduino-nano-datasheet-and-tutorial/)
+- **KLS Robot Center:** [Datasheet Lotus Nano](https://sites.google.com/view/klsrobotcenter2/datasheet-lotus-nano?authuser=0)
+
 ## ผู้จัดทำ
 
 เอกสารนี้จัดทำขึ้นเพื่อใช้ในการศึกษาและทดลอง Arduino Sensors & Modules บน Lotus Nano Bot
