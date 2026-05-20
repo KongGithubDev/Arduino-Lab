@@ -6,6 +6,10 @@
 
 Lotus Nano Bot เป็นบอร์ดหุ่นยนต์อัจฉริยะที่ใช้ **Arduino Nano** เป็นตัวควบคุมหลัก พร้อมอุปกรณ์เสริมในตัว เช่น มอเตอร์ DC, เซอร์โวมอเตอร์, จอ OLED, เข็มทิศ, และบัซเซอร์
 
+![Lotus Nano Bot - Board 1](https://lh3.googleusercontent.com/sitesv/AA5AbUAHPD6priZt8n56tiwES1wuARxCg07UI8hnBNTNnD3AG8reBCtnEgdTskggSgJ1uRJb7LVoEfEdZ19_vSz4YL7iwRsZlECHzm3cQIPxiZO6r9P0LS0Ia3TdE8Md4aWuNxEqe0fbxkgLj0HUP1P3ArVky7P7_BChYCo=w1280)
+
+![Lotus Nano Bot - Board 2](https://lh3.googleusercontent.com/sitesv/AA5AbUBtKXRU3k21_sRo-fU7D0Kx3jUjQlteGs6qZH5J_BCLCdk3iFn7vYbdz9fiwlhGp_dy7Yu_EiOVCDFJqjh0Rnl0vM_RM-GkpS2h45KFRkfnfhsnZL67z1G59f67pR6IeoDzZE8ROMjkRws_5aIE3YlWWYxQKn1l=w1280)
+
 ### สเปคเครื่อง
 
 | รายการ | รายละเอียด |
@@ -19,6 +23,12 @@ Lotus Nano Bot เป็นบอร์ดหุ่นยนต์อัจฉ�
 | SRAM | 2 KB |
 | EEPROM | 1 KB |
 | Clock Speed | 16 MHz |
+
+> ที่มา: [Arduino Nano Datasheet and Tutorial](http://avrchip.com/arduino-nano-datasheet-and-tutorial/)
+
+### ภาพบอร์ด Arduino Nano
+
+![Arduino Nano Embedded](https://lh3.googleusercontent.com/sitesv/AA5AbUBKzeUszl1-WUsaXxCZYS6CfdYVuGW0xQU78bmT9Oo2zNtiKewZ3Jw9wMDvSaT4ySo_Ds8_oIwkY_zBm4yfAkOcG-_61iJmLPDGVn5v-za0HnE4Ht2FfjcmTT39GAgo19KYzj1eLqfPNnGQH-TToOAHftbZxPTWujI=w1280)
 
 ### พอร์ตที่ใช้งานกับอุปกรณ์ภายนอกได้
 
@@ -36,6 +46,12 @@ Lotus Nano Bot เป็นบอร์ดหุ่นยนต์อัจฉ�
 
 > **⚠️ หมายเหตุ:** A4 (SDA) และ A5 (SCL) ใช้สำหรับ I2C ร่วมกับจอ OLED, ADS1115, และ HMC5883 Compass ที่ติดตั้งบนบอร์ดอยู่แล้ว หากไม่ใช้จอ OLED สามารถใช้ A4, A5 เป็น Analog ได้
 
+### แผนผังขา Arduino Nano
+
+![Arduino Nano Pinout](https://lh3.googleusercontent.com/sitesv/AA5AbUCglYzUfgcEtkvBi5PoA5bgsU_pXAsJQoxXiqB2EyeAo_l6q0RnL2w1W_Swp-xqUnnNl12h3BNPCU-W8I43RkMJPouU-hM0kssmJqQdf5DhHT_nvcKPeoRKVXu64u3k4Iz4GX7XctWdaBng_C14jDYm3Zd_xHIsGu3GlPXbgKv23t7NIpng8PHk1Dutzee5N0nBfI0VO2Akhnw=w1280)
+
+> ที่มา: [Arduino Nano Datasheet and Tutorial](http://avrchip.com/arduino-nano-datasheet-and-tutorial/)
+
 ### อุปกรณ์ในตัวของบอร์ด
 
 | อุปกรณ์ | พอร์ต |
@@ -52,6 +68,12 @@ Lotus Nano Bot เป็นบอร์ดหุ่นยนต์อัจฉ�
 | ADS1115 Analog I2C | A4 (SDA), A5 (SCL) |
 | HMC5883 Compass | A4 (SDA), A5 (SCL) |
 | Bluetooth Module | D0 (Rx), D1 (Tx) |
+
+### ภาพรวมข้อมูลบอร์ด Lotus Nano Bot
+
+![Lotus Nano Bot Overview](https://lh3.googleusercontent.com/sitesv/AA5AbUArxHiQn0w_uJiqivmxQ0YWM-3fvvSYAerwgqsOl7AEuwBqlgPLU8Rm6MmSoImTVOf2U1j0iOHH6xtg6GcqKhyehWO-hprf4wdMR9wT3sXyR0hyt4WHxCGhwERP3AFTZhs6HYUQ3lIH_bJChGPa43nwgOJ3K8OGiCfHa8PMXy2xX6P64IRTbsTJouPzxHBiAhAldUwgvEO4jRo=w1280)
+
+> ที่มา: [KLS Robot Center - Datasheet Lotus Nano](https://sites.google.com/view/klsrobotcenter2/datasheet-lotus-nano?authuser=0)
 
 ### แผนผังการต่อสายภายในบอร์ด
 
@@ -284,6 +306,10 @@ void loop() {
 
 รูปภาพเซนเซอร์และโมดูลทั้งหมดมาจาก:
 - **Instructables:** [Arduino 37 in 1 Sensors Kit Explained](https://www.instructables.com/Arduino-37-in-1-Sensors-Kit-Explained/)
+
+รูปภาพบอร์ดและข้อมูลเพิ่มเติม:
+- **avrchip.com:** [Arduino Nano Datasheet and Tutorial](http://avrchip.com/arduino-nano-datasheet-and-tutorial/)
+- **KLS Robot Center:** [Datasheet Lotus Nano](https://sites.google.com/view/klsrobotcenter2/datasheet-lotus-nano?authuser=0)
 
 ## ผู้จัดทำ
 
