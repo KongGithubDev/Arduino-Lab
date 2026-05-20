@@ -6,6 +6,10 @@
 
 Lotus Nano Bot เป็นบอร์ดหุ่นยนต์อัจฉริยะที่ใช้ **Arduino Nano** เป็นตัวควบคุมหลัก พร้อมอุปกรณ์เสริมในตัว เช่น มอเตอร์ DC, เซอร์โวมอเตอร์, จอ OLED, เข็มทิศ, และบัซเซอร์
 
+![Lotus Nano Bot - Board 1](assets/images/lotus-nano-bot-board1.png)
+
+![Lotus Nano Bot - Board 2](assets/images/lotus-nano-bot-board2.png)
+
 ### สเปคเครื่อง
 
 | รายการ | รายละเอียด |
@@ -19,6 +23,10 @@ Lotus Nano Bot เป็นบอร์ดหุ่นยนต์อัจฉ�
 | SRAM | 2 KB |
 | EEPROM | 1 KB |
 | Clock Speed | 16 MHz |
+
+### ภาพบอร์ด Arduino Nano
+
+![Arduino Nano Embedded](assets/images/arduino-nano-board.jpg)
 
 ### พอร์ตที่ใช้งานกับอุปกรณ์ภายนอกได้
 
@@ -36,6 +44,10 @@ Lotus Nano Bot เป็นบอร์ดหุ่นยนต์อัจฉ�
 
 > **⚠️ หมายเหตุ:** A4 (SDA) และ A5 (SCL) ใช้สำหรับ I2C ร่วมกับจอ OLED, ADS1115, และ HMC5883 Compass ที่ติดตั้งบนบอร์ดอยู่แล้ว หากไม่ใช้จอ OLED สามารถใช้ A4, A5 เป็น Analog ได้
 
+### แผนผังขา Arduino Nano
+
+![Arduino Nano Pinout](assets/images/arduino-nano-pinout.gif)
+
 ### อุปกรณ์ในตัวของบอร์ด
 
 | อุปกรณ์ | พอร์ต |
@@ -52,6 +64,10 @@ Lotus Nano Bot เป็นบอร์ดหุ่นยนต์อัจฉ�
 | ADS1115 Analog I2C | A4 (SDA), A5 (SCL) |
 | HMC5883 Compass | A4 (SDA), A5 (SCL) |
 | Bluetooth Module | D0 (Rx), D1 (Tx) |
+
+### ภาพรวมข้อมูลบอร์ด Lotus Nano Bot
+
+![Lotus Nano Bot Overview](assets/images/lotus-nano-bot-overview.jpg)
 
 ### แผนผังการต่อสายภายในบอร์ด
 
