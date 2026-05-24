@@ -48,6 +48,8 @@ I/O   ────────────────► D3
         |  Nano  |  Bot     |
         +--------+----------+
 ```
+<img width="1031" height="582" alt="{57B09DEC-9C31-4322-8D00-29D916387597}" src="https://github.com/user-attachments/assets/ee975a64-0dee-46f3-aeeb-d50dabe707b1" />
+
 
 ## โค้ดตัวอย่าง
 
