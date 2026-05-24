@@ -50,6 +50,8 @@ OUT  ──────────────────► D3
    |  Lotus  |   |  Nano   |   |  Bot    |
    +---------+   +---------+   +---------+
 ```
+<img width="1026" height="582" alt="{77730645-639C-4BC7-80A8-6D1C83509312}" src="https://github.com/user-attachments/assets/ca716d84-00f0-4466-abea-7188c4968092" />
+
 
 ## โค้ดตัวอย่าง
 
@@ -84,7 +86,7 @@ void loop() {
 ## โค้ดตัวอย่าง Toggle LED
 
 ```cpp
-#define BUTTON_PIN 3
+#define BUTTON_PIN 15  // A1 = D15
 #define LED_PIN 13
 
 bool ledState = false;
@@ -103,7 +105,7 @@ void loop() {
     ledState = !ledState;
     digitalWrite(LED_PIN, ledState);
     Serial.println(ledState ? "💡 LED ON" : "🌑 LED OFF");
-    delay(200);  // Debounce
+    delay(200);
   }
   
   lastButton = button;
