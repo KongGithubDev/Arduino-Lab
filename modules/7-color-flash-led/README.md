@@ -49,6 +49,8 @@ S     ────────────────► D3
    |  Lotus  |   |  Nano   |   |  Bot    |
    +---------+   +---------+   +---------+
 ```
+<img width="1033" height="582" alt="{B2C3651E-F000-49C1-B494-C953FB81067B}" src="https://github.com/user-attachments/assets/7b3ea4e5-72f0-44bb-b965-b09de809e158" />
+
 
 ## โค้ดตัวอย่าง
 
