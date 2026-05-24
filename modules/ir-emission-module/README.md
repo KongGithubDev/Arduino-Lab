@@ -49,6 +49,8 @@ S     ────────────────► D3
    |  Lotus  |   |  Nano   |   |  Bot    |
    +---------+   +---------+   +---------+
 ```
+<img width="1026" height="567" alt="{E3EBA2B2-C833-4F71-9DAE-BFAA8F8B7266}" src="https://github.com/user-attachments/assets/795c5836-8b67-4b7e-90c4-8c385d104e0b" />
+
 
 ## โค้ดตัวอย่าง
 
@@ -85,7 +87,7 @@ void loop() {
 ```cpp
 #include <IRremote.h>
 
-#define IR_SEND_PIN 3
+#define IR_SEND_PIN 2  // เปลี่ยนเป็น D2
 
 IRsend irsend;
 
@@ -96,7 +98,6 @@ void setup() {
 }
 
 void loop() {
-  // ส่งสัญญาณ NEC รหัสตัวอย่าง
   Serial.println("Sending NEC: 0xFFA25D");
   irsend.sendNEC(0xFFA25D, 32);
   delay(5000);
