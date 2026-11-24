@@ -71,23 +71,39 @@ function click(f = 180) {
   o.connect(g).connect(audio.destination); o.start(); o.stop(audio.currentTime + 0.04);
 }
 
+// ------------------------------------------------------------------ click targets
+// Board/module nodes live under a root scaled 0.001 (mm -> m), so hit spheres must
+// compensate for the inherited scale or they become microscopic.
+const HIT_GEO = new THREE.SphereGeometry(1, 14, 10);
+const ROW_COLOR = { S: 0xf4f2ec, '5V': 0xff3b3b, GND: 0x3a3a3a, JST: 0xffd24a };
+function makeHit(obj, anchor, radius) {
+  const ws = new THREE.Vector3();
+  obj.updateWorldMatrix(true, false);
+  obj.getWorldScale(ws);
+  const color = anchor.kind === 'port' ? ROW_COLOR[anchor.row] ?? 0x00ffaa : 0x38bdf8;
+  const hit = new THREE.Mesh(HIT_GEO, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0, depthTest: false }));
+  hit.scale.setScalar(radius / ws.x);
+  hit.userData.anchor = anchor;
+  hit.renderOrder = 10;
+  obj.add(hit);
+  return hit;
+}
+const coarse = matchMedia('(pointer: coarse)').matches; // touch screens get larger targets
+const HIT_R = coarse ? 0.0022 : 0.00155;
+
 // ------------------------------------------------------------------ board
 async function loadBoard() {
   const root = await stage.load(MODELS + 'lotus-nano-bot.glb');
   stage.scene.add(root);
   state.board = root;
-  const hitGeo = new THREE.SphereGeometry(0.0013, 10, 8);
-  const hitMat = new THREE.MeshBasicMaterial({ color: 0x00ffaa, transparent: true, opacity: 0, depthTest: false });
-  root.traverse((o) => {
-    const ud = o.userData || {};
-    if (ud.port && ud.row) {
-      const hit = new THREE.Mesh(ud.row === 'JST' ? new THREE.SphereGeometry(0.0026, 12, 8) : hitGeo, hitMat.clone());
-      hit.userData.anchor = { kind: 'port', obj: o, port: ud.port, row: ud.row };
-      hit.renderOrder = 10;
-      o.add(hit);
-      state.ports.push({ obj: o, port: ud.port, row: ud.row, hit });
-    }
-  });
+  root.updateMatrixWorld(true);
+  const found = [];
+  root.traverse((o) => { const ud = o.userData || {}; if (ud.port && ud.row) found.push(o); });
+  for (const o of found) {
+    const ud = o.userData;
+    const hit = makeHit(o, { kind: 'port', obj: o, port: ud.port, row: ud.row }, ud.row === 'JST' ? 0.003 : HIT_R);
+    state.ports.push({ obj: o, port: ud.port, row: ud.row, hit });
+  }
   const find = (n) => { let r = null; root.traverse((o) => { if (!r && o.name && o.name.startsWith(n)) r = o; }); return r; };
   state.parts = {
     screen: find('oled_screen'), nanoL: find('nano_led_3'), nanoPwr: find('nano_led_2'), pwrLed: find('pwr_led'),
@@ -169,14 +185,14 @@ async function addModule(key, pos, { auto = true } = {}) {
   const pins = {};
   const leds = [], dLeds = [], pwrLeds = [];
   let horn = null, wheel = null;
+  root.updateMatrixWorld(true);
+  const pinNodes = [];
+  root.traverse((o) => { if (o.userData?.pin) pinNodes.push(o); });
+  for (const o of pinNodes) {
+    pins[o.userData.pin] = o;
+    makeHit(o, { kind: 'pin', obj: o, pin: o.userData.pin, moduleId: id }, o.userData.pin === 'M' ? 0.003 : HIT_R);
+  }
   root.traverse((o) => {
-    if (o.userData?.pin) {
-      pins[o.userData.pin] = o;
-      const hit = new THREE.Mesh(new THREE.SphereGeometry(o.userData.pin === 'M' ? 0.0026 : 0.0013, 10, 8), new THREE.MeshBasicMaterial({ color: 0x00ffaa, transparent: true, opacity: 0, depthTest: false }));
-      hit.userData.anchor = { kind: 'pin', obj: o, pin: o.userData.pin, moduleId: id };
-      hit.renderOrder = 10;
-      o.add(hit);
-    }
     if (o.name === 'servo_horn') horn = o;
     if (o.name === 'motor_wheel') wheel = o;
     if (o.isMesh) {
@@ -613,23 +629,101 @@ function anchorsList() {
   return list;
 }
 
+function showTargets(on) {
+  // while a wire is being placed, light up every place it can go
+  const want = state.pending ? (state.pending.kind === 'pin' ? 'port' : 'pin') : null;
+  for (const h of anchorsList()) {
+    const an = h.userData.anchor;
+    h.material.opacity = on && an.kind === want ? 0.55 : 0;
+  }
+}
+
+function setPending(an, color = null) {
+  state.pending = an;
+  state.pendingColor = color;
+  showTargets(!!an);
+  const bar = $('#wireHint');
+  if (an) {
+    bar.querySelector('.txt').textContent = an.kind === 'pin'
+      ? `ถือสายจากขา ${an.pin} อยู่: แตะ/คลิกช่องบนหัวต่อที่จะเสียบ (ขาว = S, แดง = 5V, ดำ = GND)`
+      : `ถือสายจาก ${an.port} ${ROW_TH[an.row]} อยู่: แตะ/คลิกขาของโมดูลที่จะเสียบ`;
+    bar.hidden = false;
+  } else {
+    bar.hidden = true;
+    clearGhost();
+  }
+}
+
+function finishWire(an) {
+  if (!state.pending) return;
+  if (an && an !== state.pending) {
+    if (an.kind === state.pending.kind) {
+      // same kind: switch the start point instead of failing
+      setPending(an, state.pendingColor);
+      return;
+    }
+    if (addWire(state.pending, an, state.pendingColor)) toast('ต่อสายแล้ว', 'success');
+  }
+  setPending(null);
+}
+
+// Header pins are only 2.54 mm apart, so neighbouring hit spheres overlap.
+// Pick the anchor whose centre is closest to the pointer ray, not the first sphere hit.
+function nearestHit(e) {
+  // screen-space: the anchor whose projected centre is nearest the pointer (fingers are not precise)
+  const rect = canvas.getBoundingClientRect();
+  const px = e.clientX - rect.left, py = e.clientY - rect.top;
+  const maxD = e.pointerType === 'touch' || coarse ? 26 : 14;
+  const v = new THREE.Vector3();
+  const camDir = new THREE.Vector3();
+  stage.camera.getWorldDirection(camDir);
+  let best = null, bd = maxD * maxD;
+  for (const h of anchorsList()) {
+    h.getWorldPosition(v);
+    if (v.clone().sub(stage.camera.position).dot(camDir) <= 0) continue; // behind camera
+    v.project(stage.camera);
+    const sx = ((v.x + 1) / 2) * rect.width, sy = ((1 - v.y) / 2) * rect.height;
+    const d = (sx - px) ** 2 + (sy - py) ** 2;
+    if (d < bd) { bd = d; best = h; }
+  }
+  return best;
+}
+function anchorAt(e) {
+  const o = nearestHit(e);
+  return o ? o.userData.anchor : null;
+}
+
+let press = null; // { x, y, kind, ... } for tap vs drag detection
+const DRAG_PX = coarse ? 12 : 6;
+
 canvas.addEventListener('pointermove', (e) => {
+  if (press && !press.dragging && Math.hypot(e.clientX - press.x, e.clientY - press.y) > DRAG_PX) {
+    press.dragging = true;
+    if (press.kind === 'housing') {
+      // pulling a Dupont housing off its pin: unplug that end and carry it
+      const { wire, end } = press.plug;
+      const keep = end === 'a' ? wire.b : wire.a;
+      const color = wire.color;
+      removeWire(wire);
+      setPending(keep, color);
+      stage.controls.enabled = false;
+    }
+  }
   if (drag) {
     const p = stage.groundPoint(e);
     if (p) { drag.m.root.position.x = p.x - drag.off.x; drag.m.root.position.z = p.z - drag.off.z; for (const w of state.wires) if (w.a.moduleId === drag.m.id) w.update(); }
     return;
   }
-  const hits = stage.pick(e, anchorsList());
-  const a = hits[0]?.object;
-  if (hoverAnchor && hoverAnchor !== a) hoverAnchor.material.opacity = 0;
+  const a = nearestHit(e);
+  if (hoverAnchor && hoverAnchor !== a) { hoverAnchor.material.opacity = state.pending ? (hoverAnchor.userData.anchor.kind !== state.pending.kind ? 0.55 : 0) : 0; hoverAnchor.scale.multiplyScalar(1 / 1.35); }
+  if (a && hoverAnchor !== a) { a.material.opacity = 0.95; a.scale.multiplyScalar(1.35); }
   hoverAnchor = a || null;
-  if (a) a.material.opacity = 0.85;
   const tip = $('#tip');
   let text = '';
   if (a) {
     const an = a.userData.anchor;
     text = an.kind === 'port' ? (an.row === 'JST' ? `ขั้วมอเตอร์ ${an.port} (${an.port === 'ML' ? 'ซ้าย D9/D4/D5' : 'ขวา D7/D8/D6'})` : `พอร์ต ${an.port} · ${ROW_TH[an.row]}`) : `ขา ${an.pin} ของ ${state.modules.find((m) => m.id === an.moduleId)?.info.code}`;
-  } else {
+  } else if (!coarse) {
     const bh = state.board ? stage.pick(e, [state.board, state.usbCable, state.batteryPack].filter(Boolean))[0]?.object : null;
     const n = bh?.name || '';
     if (/^switch/.test(n)) text = `สวิตช์ไฟ: ${state.power.sw ? 'ON' : 'OFF'} (คลิกเพื่อสลับ)`;
@@ -639,16 +733,17 @@ canvas.addEventListener('pointermove', (e) => {
     else if (/^(knob|pot_)/.test(n)) text = 'Knob A7 (ลากซ้าย-ขวา)';
   }
   canvas.style.cursor = a ? 'crosshair' : text ? 'pointer' : 'default';
-  if (text) { tip.textContent = text; tip.style.left = e.clientX + 14 + 'px'; tip.style.top = e.clientY + 10 + 'px'; tip.hidden = false; } else tip.hidden = true;
+  if (text && e.pointerType !== 'touch') { tip.textContent = text; tip.style.left = e.clientX + 14 + 'px'; tip.style.top = e.clientY + 10 + 'px'; tip.hidden = false; } else tip.hidden = true;
   if (state.pending) {
     const p = stage.groundPoint(e);
     const start = new THREE.Vector3();
     state.pending.obj.getWorldPosition(start);
     if (p) {
-      p.y = 0.02;
+      if (a) a.getWorldPosition(p); else p.y = 0.02;
       const mid = start.clone().lerp(p, 0.5); mid.y = Math.max(start.y, p.y) + 0.02;
       ghost.geometry.dispose();
-      ghost.geometry = new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(start, mid, p), 30, 0.0005, 6);
+      ghost.geometry = new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(start, mid, p), 30, 0.0006, 6);
+      ghost.material.color.set(state.pendingColor || '#6ee7ff');
     }
   }
 });
@@ -656,69 +751,147 @@ canvas.addEventListener('pointermove', (e) => {
 canvas.addEventListener('pointerdown', (e) => {
   if (e.button === 2) return;
   audio?.resume?.();
-  const lockOrbit = () => { stage.controls.enabled = false; setTimeout(() => (stage.controls.enabled = true), 0); };
-  if (!state.pending) {
-    const hh = stage.pick(e, state.wires.flatMap((w) => [w.h1, w.h2]))[0];
-    if (hh) {
-      const { wire, end } = hh.object.userData.plug;
-      const keep = end === 'a' ? wire.b : wire.a;
-      state.pendingColor = wire.color;
-      removeWire(wire);
-      state.pending = keep;
-      toast(end === 'a' ? 'ถอดปลายฝั่งโมดูลแล้ว: คลิกขาโมดูลที่จะเสียบใหม่ (Esc = ทิ้งสาย)' : 'ถอดปลายฝั่งบอร์ดแล้ว: คลิกช่องบนหัวต่อที่จะเสียบใหม่ (Esc = ทิ้งสาย)');
-      lockOrbit();
-      return;
-    }
-  }
-  const anchors = stage.pick(e, anchorsList());
-  if (anchors.length) {
-    const an = anchors[0].object.userData.anchor;
-    if (!state.pending) { state.pending = an; toast(an.kind === 'port' ? `เลือก ${an.port} ${ROW_TH[an.row]} แล้ว: คลิกขาโมดูลปลายทาง` : `เลือกขา ${an.pin} แล้ว: คลิกช่องบนหัวต่อปลายทาง`); }
-    else {
-      if (an !== state.pending) addWire(state.pending, an, state.pendingColor);
-      state.pending = null;
-      state.pendingColor = null;
-      clearGhost();
-    }
+  const lockOrbit = () => { stage.controls.enabled = false; };
+  press = { x: e.clientX, y: e.clientY, kind: null, dragging: false };
+  // 1) a pin / slot (highest priority: always lets you start or finish a wire)
+  const an = anchorAt(e);
+  if (an) {
+    press.kind = 'anchor';
+    press.anchor = an;
+    if (state.pending) finishWire(an);
+    else setPending(an);
     lockOrbit();
     return;
   }
-  // board controls and power accessories
+  // 2) the black Dupont housing of an existing wire: drag it to move that end
+  const hh = stage.pick(e, state.wires.flatMap((w) => [w.h1, w.h2]))[0];
+  if (hh) {
+    press.kind = 'housing';
+    press.plug = hh.object.userData.plug;
+    lockOrbit();
+    return;
+  }
+  // 3) board controls and power accessories
   const ph = stage.pick(e, [state.board, state.usbCable, state.batteryPack].filter((o) => o && o.visible !== false))[0]?.object;
   const n = ph?.name || '';
   if (ph) {
     if (/^switch/.test(n)) { setPower({ sw: !state.power.sw }); lockOrbit(); return; }
     if (/^nano_usb/.test(n) || ph.userData.powerPart === 'usb') { setPower({ usb: !state.power.usb }); lockOrbit(); return; }
     if (/^tplug/.test(n) || ph.userData.powerPart === 'battery') { setPower({ battery: !state.power.battery }); lockOrbit(); return; }
-    if (/^btn_/.test(n)) { state.d2Pressed = true; stage.controls.enabled = false; return; }
-    if (/^(knob|pot_)/.test(n)) { state.knobDrag = { x: e.clientX, k: state.knob }; stage.controls.enabled = false; return; }
+    if (/^btn_/.test(n)) { state.d2Pressed = true; lockOrbit(); return; }
+    if (/^(knob|pot_)/.test(n)) { state.knobDrag = { x: e.clientX, k: state.knob }; lockOrbit(); return; }
   }
+  // 4) modules: select + drag
   const mh = stage.pick(e, state.modules.map((m) => m.root))[0];
   if (mh) {
     let o = mh.object; while (o && !o.userData.moduleId) o = o.parent;
     const m = state.modules.find((x) => x.id === o.userData.moduleId);
     select(m);
     const p = stage.groundPoint(e);
-    if (p) { drag = { m, off: { x: p.x - m.root.position.x, z: p.z - m.root.position.z } }; stage.controls.enabled = false; }
+    if (p) { drag = { m, off: { x: p.x - m.root.position.x, z: p.z - m.root.position.z } }; lockOrbit(); }
     return;
   }
+  // 5) a wire: select it (delete with the button / Delete key / right-click)
   const wh = stage.pick(e, state.wires.map((w) => w.mesh))[0];
-  if (wh) { const w = wh.object.userData.wire; state.wires.forEach((x) => x.setHighlight(false)); w.setHighlight(true); state.selWire = w; toast('เลือกสายแล้ว: กด Delete หรือคลิกขวาเพื่อลบ'); }
-  if (state.pending) { state.pending = null; clearGhost(); }
+  if (wh) { selectWire(wh.object.userData.wire); return; }
+  selectWire(null);
 });
+
+canvas.addEventListener('pointerup', (e) => {
+  const p = press;
+  press = null;
+  if (!p) return;
+  if (p.kind === 'anchor' && p.dragging && state.pending) {
+    // drag-to-connect: released over a target
+    const an = anchorAt(e);
+    if (an && an !== state.pending) finishWire(an);
+  } else if (p.kind === 'housing') {
+    if (p.dragging && state.pending) {
+      const an = anchorAt(e);
+      if (an && an !== state.pending) finishWire(an);
+    } else if (!p.dragging) {
+      // simple tap on a housing: start an extra wire from that pin / slot
+      const { wire, end } = p.plug;
+      setPending(end === 'a' ? wire.a : wire.b);
+    }
+  }
+});
+
+function rotateModule(m, dir = 1) {
+  m.root.rotation.y += (dir * Math.PI) / 2;
+  state.wires.forEach((w) => w.update());
+  save();
+}
+
+function selectWire(w) {
+  state.wires.forEach((x) => x.setHighlight(false));
+  state.selWire = w;
+  if (w) w.setHighlight(true);
+  const bar = $('#wireSel');
+  bar.hidden = !w;
+  if (w) bar.querySelector('.txt').textContent = `สาย: ${state.modules.find((m) => m.id === w.a.moduleId)?.info.code} ขา ${w.a.pin} → ${w.b.port} ${ROW_TH[w.b.row]}`;
+}
 
 window.addEventListener('pointermove', (e) => { if (state.knobDrag) state.knob = Math.min(1, Math.max(0, state.knobDrag.k + (e.clientX - state.knobDrag.x) / 300)); });
 window.addEventListener('pointerup', () => { if (drag) save(); drag = null; state.d2Pressed = false; state.knobDrag = null; stage.controls.enabled = true; });
+$('#btnDelWire').addEventListener('click', () => { if (state.selWire) { removeWire(state.selWire); selectWire(null); toast('ลบสายแล้ว'); } });
+$('#btnCancelWire').addEventListener('click', () => setPending(null));
 canvas.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   const wh = stage.pick(e, state.wires.map((w) => w.mesh))[0];
-  if (wh) removeWire(wh.object.userData.wire);
+  if (wh) { removeWire(wh.object.userData.wire); selectWire(null); }
 });
 window.addEventListener('keydown', (e) => {
-  if (e.target.closest('textarea, input, .CodeMirror, sl-input, sl-textarea')) return;
-  if ((e.key === 'Delete' || e.key === 'Backspace') && state.selWire) { removeWire(state.selWire); state.selWire = null; }
-  if (e.key === 'r' && state.selected) { state.selected.root.rotation.y += Math.PI / 2; state.wires.forEach((w) => w.update()); save(); }
-  if (e.key === 'Escape') { state.pending = null; clearGhost(); }
+  if (typing(e)) return;
+  if ((e.key === 'Delete' || e.key === 'Backspace') && state.selWire) { removeWire(state.selWire); selectWire(null); }
+  // e.code is the physical key, so R works with a Thai (or any) keyboard layout
+  if (e.code === 'KeyR' && !e.ctrlKey && !e.metaKey && state.selected) rotateModule(state.selected);
+  if (e.key === 'Escape') setPending(null);
+});
+
+// ------------------------------------------------------------------ keyboard camera: WASD move, Q/E down/up, arrows orbit, Shift = fast
+const keys = new Set();
+const typing = (e) => !!e.target?.closest?.('textarea, input, .CodeMirror, sl-input, sl-textarea, sl-select');
+window.addEventListener('keydown', (e) => { if (!typing(e)) keys.add(e.code); });
+window.addEventListener('keyup', (e) => keys.delete(e.code));
+window.addEventListener('blur', () => keys.clear());
+let camT = 0;
+stage.onFrame.push((t) => {
+  const dt = Math.min(0.05, (t - camT) / 1000 || 0);
+  camT = t;
+  if (!keys.size) return;
+  const cam = stage.camera, tgt = stage.controls.target;
+  const fwd = new THREE.Vector3().subVectors(tgt, cam.position).setY(0);
+  if (fwd.lengthSq() < 1e-9) fwd.set(0, 0, -1);
+  fwd.normalize();
+  const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
+  const dist = cam.position.distanceTo(tgt);
+  const speed = (keys.has('ShiftLeft') || keys.has('ShiftRight') ? 2.5 : 1) * Math.max(0.05, dist) * 1.2 * dt;
+  const move = new THREE.Vector3();
+  if (keys.has('KeyW')) move.add(fwd);
+  if (keys.has('KeyS')) move.sub(fwd);
+  if (keys.has('KeyD')) move.add(right);
+  if (keys.has('KeyA')) move.sub(right);
+  if (keys.has('KeyE')) move.y += 1;
+  if (keys.has('KeyQ')) move.y -= 1;
+  if (move.lengthSq()) {
+    move.normalize().multiplyScalar(speed);
+    cam.position.add(move);
+    tgt.add(move);
+    if (tgt.y < 0) { cam.position.y -= tgt.y; tgt.y = 0; }
+  }
+  const rot = (keys.has('ArrowLeft') ? 1 : 0) - (keys.has('ArrowRight') ? 1 : 0);
+  if (rot) {
+    const off = cam.position.clone().sub(tgt).applyAxisAngle(new THREE.Vector3(0, 1, 0), rot * dt * 1.6);
+    cam.position.copy(tgt).add(off);
+  }
+  const tilt = (keys.has('ArrowUp') ? 1 : 0) - (keys.has('ArrowDown') ? 1 : 0);
+  if (tilt) {
+    const off = cam.position.clone().sub(tgt);
+    const sph = new THREE.Spherical().setFromVector3(off);
+    sph.phi = Math.min(Math.PI * 0.48, Math.max(0.05, sph.phi - tilt * dt * 1.2));
+    cam.position.copy(tgt).add(new THREE.Vector3().setFromSpherical(sph));
+  }
 });
 
 // ------------------------------------------------------------------ UI
@@ -752,6 +925,7 @@ function select(m) {
     <div class="btnrow">
       <sl-button size="small" variant="success" id="btnAuto"><sl-icon slot="prefix" name="plug"></sl-icon>ต่อสายอัตโนมัติ</sl-button>
       <sl-button size="small" id="btnUnwire"><sl-icon slot="prefix" name="scissors"></sl-icon>ถอดสายทั้งหมด</sl-button>
+      <sl-button size="small" id="btnRotate"><sl-icon slot="prefix" name="arrow-clockwise"></sl-icon>หมุน</sl-button>
       <sl-button size="small" variant="danger" outline id="btnRemove"><sl-icon slot="prefix" name="trash"></sl-icon>ลบ</sl-button>
     </div>
     <div class="btnrow">
@@ -764,6 +938,7 @@ function select(m) {
   $('#btnAuto').addEventListener('click', () => autoWire(m));
   $('#btnUnwire').addEventListener('click', () => { for (const w of [...state.wires]) if (w.a.moduleId === m.id) removeWire(w); toast('ถอดสายของโมดูลนี้แล้ว'); });
   $('#btnRemove').addEventListener('click', () => removeModule(m));
+  $('#btnRotate').addEventListener('click', () => rotateModule(m));
   $('#btnLoadEx').addEventListener('click', () => { if (loadExample(m, +$('#exSel').value)) { toast('โหลดโค้ดตัวอย่างแล้ว (เลขขาตรงกับพอร์ตที่ต่อจริง)', 'success'); showTab('code'); } });
   renderEnv(m);
   showTab('module');
@@ -982,6 +1157,24 @@ function toast(msg, variant = 'neutral') {
   if (el.toast) el.toast(); else setTimeout(() => el.remove(), 3200);
 }
 
+// ------------------------------------------------------------------ phone / tablet: bottom navigation opens slide-up panels
+function setPane(name) {
+  document.body.classList.remove('pane-left', 'pane-right', 'pane-dock');
+  if (name && name !== 'none') document.body.classList.add('pane-' + name);
+  document.querySelectorAll('.mobile-nav button').forEach((b) => b.classList.toggle('on', b.dataset.pane === (name || 'none')));
+  editor?.refresh();
+}
+document.querySelectorAll('.mobile-nav button').forEach((b) => b.addEventListener('click', () => {
+  const open = document.body.classList.contains('pane-' + b.dataset.pane);
+  setPane(open ? 'none' : b.dataset.pane);
+}));
+const isCompact = () => getComputedStyle(document.querySelector('.mobile-nav')).display !== 'none';
+// placing a module from the library on a phone closes the library so the 3D view is visible
+$('#library').addEventListener('click', (e) => { if (isCompact() && e.target.closest('.card')) setPane('none'); });
+const syncAppbar = () => document.documentElement.style.setProperty('--appbar-h', $('.appbar').offsetHeight + 'px');
+new ResizeObserver(syncAppbar).observe($('.appbar'));
+syncAppbar();
+
 window.__sim = { state, stage, mcu, oled, addModule, autoWire, runCode: () => runCode(), stop: () => stopSketch(), setCode, setPower };
 
 (async function main() {
@@ -993,6 +1186,7 @@ window.__sim = { state, stage, mcu, oled, addModule, autoWire, runCode: () => ru
   setRunUi(false);
   try {
     await loadBoard();
+    if (isCompact() && innerWidth < innerHeight) { stage.camera.position.set(0.06, 0.32, 0.42); stage.controls.target.set(0.03, 0, 0.0); }
     await restore();
     checkWiring();
     $('#loading').hidden = true;

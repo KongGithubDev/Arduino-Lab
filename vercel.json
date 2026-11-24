@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": false,
+  "redirects": [
+    { "source": "/", "destination": "/simulator/", "permanent": false }
+  ],
+  "headers": [
+    { "source": "/simulator/models/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=86400" }] },
+    { "source": "/(.*)\.glb", "headers": [{ "key": "Content-Type", "value": "model/gltf-binary" }] }
+  ]
+}
