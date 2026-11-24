@@ -4,6 +4,8 @@
 
 ## เปิดใช้งาน
 
+**ออนไลน์:** https://arduino-lab-wheat.vercel.app (ใช้ได้บนคอมพิวเตอร์, iPad และมือถือ)
+
 เว็บต้องเปิดผ่านเว็บเซิร์ฟเวอร์ (เปิดไฟล์ตรงๆ แบบ `file://` จะโหลดโมเดล 3D ไม่ได้)
 
 ```bash
@@ -12,7 +14,6 @@ python -m http.server 8000
 # แล้วเปิด http://localhost:8000/simulator/
 ```
 
-หรือเปิด GitHub Pages ของ repo (Settings → Pages → Branch `main` / root) แล้วเข้า `https://<user>.github.io/Arduino-Lab/simulator/`
 
 ## วิธีใช้
 

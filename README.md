@@ -1,10 +1,12 @@
 # Arduino-Lab
 
+**🌐 เปิด Simulator ออนไลน์: https://arduino-lab-wheat.vercel.app** (ใช้ได้ทั้งคอม, iPad และมือถือ)
+
 เอกสารและโครงสร้างสำหรับการทดลอง Arduino Sensors & Modules บน **Lotus Nano Bot**
 
 ## สื่อการสอน (เริ่มที่นี่)
 
-> **ใหม่: [Lotus Nano Bot Simulator 3D](simulator/README.md)** ต่อสายเซนเซอร์ทั้ง 37 ตัวกับบอร์ดและรันโค้ด Arduino ในเบราว์เซอร์ได้ (`python tools/serve.py` แล้วเปิด `http://localhost:8000/simulator/`)
+> **ใหม่: [Lotus Nano Bot Simulator 3D](https://arduino-lab-wheat.vercel.app)** ต่อสายเซนเซอร์ทั้ง 37 ตัวกับบอร์ด จ่ายไฟ เสียบเซอร์โว/มอเตอร์ และรันโค้ด Arduino ในเบราว์เซอร์ได้ ([วิธีใช้](simulator/README.md) · รันในเครื่อง: `python tools/serve.py`)
 
 | สำหรับ | เอกสาร |
 |-------|-------|
