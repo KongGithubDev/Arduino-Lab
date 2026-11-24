@@ -1,17 +1,19 @@
 <!doctype html>
-<html lang="th">
+<html lang="th" class="sl-theme-dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lotus Nano Bot Simulator</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.15.0/cdn/themes/dark.css">
+<script type="module" src="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.15.0/cdn/shoelace-autoloader.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
-<link rel="stylesheet" href="css/style.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+<link rel="stylesheet" href="css/style.css">
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
@@ -20,76 +22,97 @@
 </script>
 </head>
 <body>
-<header class="top">
-  <div class="brand"><span class="logo">◎</span> Lotus Nano Bot <b>Simulator</b></div>
-  <div class="views">
-    <span class="muted">มุมมอง</span>
-    <button data-view="angle">เฉียง</button>
-    <button data-view="top">ด้านบน</button>
-    <button data-view="front">ด้านหน้า</button>
-    <button data-view="board">ซูมบอร์ด</button>
+<header class="appbar">
+  <div class="brand">
+    <span class="logo"><sl-icon name="cpu"></sl-icon></span>
+    <div><div class="title">Lotus Nano Bot</div><div class="subtitle">3D Simulator · 37-in-1 Sensor Kit</div></div>
   </div>
-  <div class="runbar">
-    <button id="btnRun" class="primary">▶ รัน</button>
-    <button id="btnStop">■ หยุด</button>
-    <span id="runState" class="muted">หยุด</span>
+
+  <sl-button-group label="มุมมอง" class="views">
+    <sl-tooltip content="มุมเฉียง"><sl-button size="small" data-view="angle"><sl-icon name="box"></sl-icon></sl-button></sl-tooltip>
+    <sl-tooltip content="มองจากด้านบน"><sl-button size="small" data-view="top"><sl-icon name="grid-3x3"></sl-icon></sl-button></sl-tooltip>
+    <sl-tooltip content="มองด้านหน้า"><sl-button size="small" data-view="front"><sl-icon name="window"></sl-icon></sl-button></sl-tooltip>
+    <sl-tooltip content="ซูมบอร์ด"><sl-button size="small" data-view="board"><sl-icon name="zoom-in"></sl-icon></sl-button></sl-tooltip>
+  </sl-button-group>
+
+  <div class="power">
+    <sl-tooltip content="สาย USB จากคอมพิวเตอร์ (จ่ายไฟ 5V ให้บอร์ด แต่ไม่พอสำหรับมอเตอร์)"><sl-switch id="pwUsb" size="small" checked><sl-icon name="usb-symbol"></sl-icon> USB</sl-switch></sl-tooltip>
+    <sl-tooltip content="แบตเตอรี่ LiPo 7.4V ต่อที่ขั้ว T-Plug (จำเป็นสำหรับมอเตอร์)"><sl-switch id="pwBat" size="small"><sl-icon name="battery-full"></sl-icon> แบต</sl-switch></sl-tooltip>
+    <sl-tooltip content="สวิตช์ ON/OFF บนบอร์ด (ตัดไฟจากแบตเตอรี่)"><sl-switch id="pwSw" size="small"><sl-icon name="toggle-on"></sl-icon> ON/OFF</sl-switch></sl-tooltip>
+    <sl-badge id="pwBadge" variant="success" pill>ไฟจาก USB</sl-badge>
   </div>
+
+  <sl-button id="btnRun" variant="success" size="medium" class="runbtn"><sl-icon slot="prefix" name="play-fill"></sl-icon>รัน</sl-button>
 </header>
 
 <main class="layout">
+  <!-- left: parts library -->
   <aside class="left">
-    <h3>คลังโมดูล (37 ชิ้น)</h3>
-    <div class="row">
-      <input id="search" type="search" placeholder="ค้นหา เช่น KY-018, แสง, LED">
-      <select id="libCat"><option value="all">ทั้งหมด</option><option value="sensor">เซนเซอร์</option><option value="module">โมดูล</option></select>
-    </div>
+    <sl-input id="search" size="small" placeholder="ค้นหา เช่น KY-018, แสง, LED" clearable>
+      <sl-icon name="search" slot="prefix"></sl-icon>
+    </sl-input>
+    <sl-radio-group id="libCat" value="all" size="small" class="cats">
+      <sl-radio-button value="all">ทั้งหมด</sl-radio-button>
+      <sl-radio-button value="sensor">เซนเซอร์</sl-radio-button>
+      <sl-radio-button value="module">โมดูล</sl-radio-button>
+      <sl-radio-button value="actuator">มอเตอร์</sl-radio-button>
+    </sl-radio-group>
     <div id="library" class="library"></div>
-    <h3>บนโต๊ะ</h3>
-    <ul id="placed" class="placed"></ul>
-    <button id="btnReset" class="ghost danger small">ล้างโต๊ะทั้งหมด</button>
+    <div class="section-title">บนโต๊ะ</div>
+    <div id="placed" class="placed"></div>
+    <sl-button id="btnReset" size="small" variant="danger" outline class="reset"><sl-icon slot="prefix" name="trash3"></sl-icon>ล้างโต๊ะทั้งหมด</sl-button>
   </aside>
 
+  <!-- center: 3D + dock -->
   <section class="center">
     <div id="viewport" class="viewport">
-      <div id="loading" class="loading">กำลังโหลดโมเดล 3D…</div>
-      <div class="help">
-        <b>วิธีใช้</b> คลิกโมดูลในคลัง → วางบนโต๊ะ <b>ต่อสาย + โหลดโค้ดตัวอย่างให้อัตโนมัติ</b> (หลายโมดูลจะได้พอร์ตไม่ซ้ำกัน) แล้วกด ▶ รัน ·
-        ต่อสายเอง: คลิก <i>ขาโมดูล</i> แล้วคลิก <i>ช่องบนหัวต่อ</i> (ขาว S / แดง 5V / ดำ GND) ต่อกี่เส้นก็ได้ ·
-        <b>คลิกหัวสายสีดำ</b> เพื่อถอดย้ายไปเสียบที่อื่น · คลิกขวาที่สาย = ลบ · ลากโมดูลเพื่อย้าย · <kbd>R</kbd> หมุน · คลิกปุ่มฟ้า D2 / ลาก Knob A7 ได้
+      <div id="loading" class="loading"><sl-spinner></sl-spinner><span>กำลังโหลดโมเดล 3D…</span></div>
+      <div class="hud-top">
+        <sl-checkbox id="irCam" size="small">มองแสง IR</sl-checkbox>
       </div>
-      <label class="ircam"><input type="checkbox" id="irCam"> มองแสง IR (กล้องมือถือ)</label>
+      <div class="hud-help">
+        <sl-icon name="mouse"></sl-icon>
+        <span><b>วางโมดูล</b> = ต่อสาย + โหลดโค้ดอัตโนมัติ · <b>คลิกขา → คลิกช่อง</b> = ต่อสายเอง · <b>คลิกหัวสายดำ</b> = ถอด/ย้าย · คลิกขวาที่สาย = ลบ · ลากโมดูล = ย้าย · <kbd>R</kbd> หมุน · คลิก <b>สวิตช์ / USB / T-Plug</b> บนบอร์ด = จ่ายไฟ</span>
+      </div>
     </div>
-    <div class="statusbar"><span id="hwStatus"></span></div>
-    <ul id="issues" class="issues"></ul>
+    <div id="hwStatus" class="statusbar"></div>
+    <sl-tab-group class="dock" placement="top">
+      <sl-tab slot="nav" panel="serial"><sl-icon name="terminal"></sl-icon>&nbsp;Serial Monitor</sl-tab>
+      <sl-tab slot="nav" panel="plot"><sl-icon name="graph-up"></sl-icon>&nbsp;Plotter</sl-tab>
+      <sl-tab slot="nav" panel="issues"><sl-icon name="clipboard-check"></sl-icon>&nbsp;ตรวจการต่อสาย <sl-badge id="issueCount" variant="warning" pill hidden>0</sl-badge></sl-tab>
+      <sl-tab-panel name="serial">
+        <div class="serial-wrap">
+          <pre id="serial" class="serial"></pre>
+          <form id="serialSend" class="serial-send">
+            <input id="serialIn" placeholder="พิมพ์ข้อความส่งไปยังบอร์ด แล้วกด Enter">
+            <sl-checkbox id="autoscroll" size="small" checked>เลื่อนอัตโนมัติ</sl-checkbox>
+            <sl-button id="btnClear" size="small" variant="text"><sl-icon slot="prefix" name="eraser"></sl-icon>ล้าง</sl-button>
+          </form>
+        </div>
+      </sl-tab-panel>
+      <sl-tab-panel name="plot"><canvas id="plotter" class="plotter"></canvas></sl-tab-panel>
+      <sl-tab-panel name="issues"><ul id="issues" class="issues"></ul></sl-tab-panel>
+    </sl-tab-group>
   </section>
 
+  <!-- right: module + code -->
   <aside class="right">
-    <div id="modulePanel" class="panel"></div>
-    <div class="panel code">
-      <div class="row between">
-        <h3>โค้ด Arduino</h3>
-        <div class="row"><select id="exBoard"></select><button id="btnBoardEx">โหลด</button></div>
-      </div>
-      <textarea id="code" spellcheck="false"></textarea>
-      <pre id="errors" class="errors" hidden></pre>
-    </div>
-    <div class="panel monitor">
-      <div class="tabs">
-        <button data-tab="tabSerial" class="on">Serial Monitor</button>
-        <button data-tab="tabPlot">Serial Plotter</button>
-        <label class="small"><input type="checkbox" id="autoscroll" checked> เลื่อนอัตโนมัติ</label>
-        <button id="btnClear" class="ghost small">ล้าง</button>
-      </div>
-      <div id="tabSerial" class="tabpane">
-        <pre id="serial" class="serial"></pre>
-        <form id="serialSend" class="row"><input id="serialIn" placeholder="พิมพ์ข้อความส่งไปยังบอร์ด"><button>ส่ง</button></form>
-      </div>
-      <div id="tabPlot" class="tabpane" hidden><canvas id="plotter" class="plotter"></canvas></div>
-    </div>
+    <sl-tab-group id="rightTabs">
+      <sl-tab slot="nav" panel="module"><sl-icon name="sliders"></sl-icon>&nbsp;โมดูล</sl-tab>
+      <sl-tab slot="nav" panel="code"><sl-icon name="code-slash"></sl-icon>&nbsp;โค้ด Arduino</sl-tab>
+      <sl-tab-panel name="module"><div id="modulePanel" class="module-panel"></div></sl-tab-panel>
+      <sl-tab-panel name="code">
+        <div class="code-tools">
+          <sl-select id="exBoard" size="small" value="0" hoist placeholder="ตัวอย่างอุปกรณ์บนบอร์ด"></sl-select>
+          <sl-button id="btnBoardEx" size="small"><sl-icon slot="prefix" name="download"></sl-icon>โหลด</sl-button>
+        </div>
+        <textarea id="code" spellcheck="false"></textarea>
+        <sl-alert id="errors" variant="danger" open hidden><sl-icon slot="icon" name="bug"></sl-icon><span class="msg"></span><div class="small muted">ตัวจำลองรองรับภาษา Arduino ส่วนที่ใช้บ่อย: ตัวแปร ฟังก์ชัน อาร์เรย์ if/for/while/switch, Serial, Servo, OLED, DHT, DS18B20, IRremote, ADS1115</div></sl-alert>
+      </sl-tab-panel>
+    </sl-tab-group>
   </aside>
 </main>
 <div id="tip" class="tip" hidden></div>
-<div id="toast" class="toast" hidden></div>
 <script type="module" src="js/app.js"></script>
 </body>
 </html>

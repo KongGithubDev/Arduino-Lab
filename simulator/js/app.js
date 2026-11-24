@@ -1,19 +1,24 @@
 import { Stage, Wire, THREE } from './scene.js';
-import { CATALOG } from './catalog.js';
-import { BEHAVIORS } from './behaviors.js';
+import { CATALOG as KIT } from './catalog.js';
+import { BEHAVIORS as KIT_BEHAVIORS } from './behaviors.js';
 import { MCU, runSketch, TranspileError } from './runtime.js';
 import { Oled } from './oled.js';
 import { BOARD_EXAMPLES } from './board-examples.js';
+import { EXTRA_BUILDERS, EXTRA_CATALOG, EXTRA_BEHAVIORS, buildUsbCable, buildBattery } from './extras.js';
 
+const CATALOG = [...KIT, ...EXTRA_CATALOG];
+const BEHAVIORS = { ...KIT_BEHAVIORS, ...EXTRA_BEHAVIORS };
 const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const MODELS = 'models/';
 const ASSETS = '../';
 const POWER_PINS = ['+', '+5V', 'V+', 'VCC', 'VDD'];
 const GROUND_PINS = ['-', 'G', 'GND'];
 const PORT_TO_PIN = { A0: 14, A1: 15, A2: 16, A3: 17, A4: 18, A5: 19, A6: 20, D0: 0, D1: 1, D3: 3, SV1: 10, SV2: 11, SV3: 12 };
 const PIN_TO_PORT = Object.fromEntries(Object.entries(PORT_TO_PIN).map(([k, v]) => [v, k]));
-const ROW_TH = { S: 'ช่องขาว (S)', '5V': 'ช่องแดง (5V)', GND: 'ช่องดำ (GND)' };
+const ROW_TH = { S: 'ช่องขาว (S)', '5V': 'ช่องแดง (5V)', GND: 'ช่องดำ (GND)', JST: 'ขั้วต่อมอเตอร์' };
 const SIGNAL_COLORS = ['#f2c200', '#1f6fe0', '#20a040', '#e87a10', '#9b3fd4', '#e8e8e8'];
+const MOTOR_PINS = { ML: [9, 4, 5], MR: [7, 8, 6] };
 
 // ------------------------------------------------------------------ state
 const stage = new Stage($('#viewport'));
@@ -21,19 +26,23 @@ const mcu = new MCU(null);
 const oled = new Oled();
 const state = {
   board: null,
-  ports: [],        // {obj, port, row}
-  modules: [],      // {id, key, info, behavior, root, pins:{name:obj}, env:{}, parts}
+  ports: [],
+  modules: [],
   wires: [],
-  pending: null,    // first end while wiring
+  pending: null,
   selected: null,
   running: null,
+  uploaded: null,          // last uploaded sketch: restarts when power comes back
   d2Pressed: false,
   knob: 0.5,
   warned: new Set(),
   irQueue: [],
   servo: {},
+  power: { usb: true, battery: false, sw: false },
 };
 let nextId = 1;
+const boardOn = () => state.power.usb || (state.power.battery && state.power.sw);
+const motorsOn = () => state.power.battery && state.power.sw;
 
 // ------------------------------------------------------------------ audio
 let audio = null;
@@ -50,15 +59,15 @@ function sound(id, freq, type = 'square') {
   o.type = type;
   o.frequency.value = freq;
   g.gain.value = 0;
-  g.gain.setTargetAtTime(0.05, audio.currentTime, 0.005);
+  g.gain.setTargetAtTime(type === 'sawtooth' ? 0.02 : 0.05, audio.currentTime, 0.005);
   o.connect(g).connect(audio.destination);
   o.start();
   voices[id] = { o, g };
 }
-function click() {
+function click(f = 180) {
   if (!audio) return;
   const o = audio.createOscillator(); const g = audio.createGain();
-  o.frequency.value = 180; g.gain.value = 0.08; g.gain.setTargetAtTime(0, audio.currentTime, 0.01);
+  o.frequency.value = f; g.gain.value = 0.08; g.gain.setTargetAtTime(0, audio.currentTime, 0.01);
   o.connect(g).connect(audio.destination); o.start(); o.stop(audio.currentTime + 0.04);
 }
 
@@ -71,63 +80,105 @@ async function loadBoard() {
   const hitMat = new THREE.MeshBasicMaterial({ color: 0x00ffaa, transparent: true, opacity: 0, depthTest: false });
   root.traverse((o) => {
     const ud = o.userData || {};
-    if (ud.port && ud.row && ud.row !== 'JST') {
-      const hit = new THREE.Mesh(hitGeo, hitMat.clone());
+    if (ud.port && ud.row) {
+      const hit = new THREE.Mesh(ud.row === 'JST' ? new THREE.SphereGeometry(0.0026, 12, 8) : hitGeo, hitMat.clone());
       hit.userData.anchor = { kind: 'port', obj: o, port: ud.port, row: ud.row };
       hit.renderOrder = 10;
       o.add(hit);
       state.ports.push({ obj: o, port: ud.port, row: ud.row, hit });
     }
   });
-  // onboard parts
   const find = (n) => { let r = null; root.traverse((o) => { if (!r && o.name && o.name.startsWith(n)) r = o; }); return r; };
   state.parts = {
-    screen: find('oled_screen'),
-    nanoL: find('nano_led_3'),
-    pwrLed: find('pwr_led'),
-    button: find('btn_cap'),
-    knob: find('knob_shaft'),
+    screen: find('oled_screen'), nanoL: find('nano_led_3'), nanoPwr: find('nano_led_2'), pwrLed: find('pwr_led'),
+    button: find('btn_cap'), knob: find('knob_shaft'), lever: find('switch_lever'), usb: find('nano_usb'), tplug: find('tplug_housing'),
   };
-  if (state.parts.screen) {
-    state.parts.screen.material = new THREE.MeshBasicMaterial({ map: oled.texture, toneMapped: false });
-    // the plane UV is mirrored by the exporter on some versions; keep as-is
-  }
+  if (state.parts.screen) state.parts.screen.material = new THREE.MeshBasicMaterial({ map: oled.texture, toneMapped: false });
   root.traverse((o) => {
-    // clear acrylic parts: thin, slightly tinted, no transmission glare
     if (o.isMesh && /^oled_case/.test(o.name)) {
-      o.material = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.08, metalness: 0, transparent: true, opacity: 0.07, envMapIntensity: 0.25, depthWrite: false });
+      o.material = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.08, transparent: true, opacity: 0.07, envMapIntensity: 0.25, depthWrite: false });
       o.castShadow = false;
     }
-    if (o.isMesh && /^oled_glass/.test(o.name)) {
-      o.material = new THREE.MeshPhysicalMaterial({ color: 0x030304, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.08, envMapIntensity: 0.5 });
-    }
+    if (o.isMesh && /^oled_glass/.test(o.name)) o.material = new THREE.MeshPhysicalMaterial({ color: 0x030304, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.08, envMapIntensity: 0.5 });
   });
-  for (const k of ['nanoL', 'pwrLed']) {
-    const p = state.parts[k];
-    if (p) p.material = p.material.clone();
-  }
-  if (state.parts.pwrLed) { state.parts.pwrLed.material.emissive = new THREE.Color(0x22ff44); state.parts.pwrLed.material.emissiveIntensity = 2.2; }
+  for (const k of ['nanoL', 'nanoPwr', 'pwrLed']) { const p = state.parts[k]; if (p) p.material = p.material.clone(); }
+  if (state.parts.lever) state.parts.lever.userData.x0 = state.parts.lever.position.x;
+
+  // power accessories placed from the board geometry
+  const usb = buildUsbCable();
+  const pu = new THREE.Vector3();
+  state.parts.usb?.getWorldPosition(pu);
+  const bb = new THREE.Box3().setFromObject(state.parts.usb);
+  usb.position.set(pu.x, (bb.min.y + bb.max.y) / 2, bb.max.z + 0.003);
+  stage.scene.add(usb);
+  state.usbCable = usb;
+  const bat = buildBattery();
+  const pt = new THREE.Box3().setFromObject(state.parts.tplug);
+  bat.position.set(pt.max.x + 0.075, 0, pt.max.z + 0.032);
+  stage.scene.add(bat);
+  state.batteryPack = bat;
   oled.reset();
+  applyPower(true);
+}
+
+// ------------------------------------------------------------------ power system
+function setPower(patch) {
+  const wasOn = boardOn();
+  Object.assign(state.power, patch);
+  applyPower();
+  const nowOn = boardOn();
+  if (wasOn && !nowOn) {
+    haltSketch();
+    toast('บอร์ดไม่มีไฟเลี้ยง: ทุกอย่างหยุดทำงาน', 'warning');
+  } else if (!wasOn && nowOn && state.uploaded) {
+    toast('จ่ายไฟแล้ว: บอร์ดรีเซ็ตและเริ่มรันโปรแกรมที่อัปโหลดไว้', 'success');
+    startSketch(state.uploaded);
+  }
+  checkWiring();
+  save();
+}
+
+function applyPower(silent) {
+  const p = state.power;
+  const on = boardOn();
+  if (state.usbCable) state.usbCable.visible = p.usb;
+  if (state.batteryPack) state.batteryPack.visible = p.battery;
+  const lever = state.parts?.lever;
+  if (lever) lever.position.x = lever.userData.x0 - (p.sw ? 0 : 3.8);
+  const glow = (mesh, color, k) => { if (!mesh) return; mesh.material.emissive = new THREE.Color(color); mesh.material.emissiveIntensity = k; };
+  glow(state.parts?.pwrLed, 0x22ff44, on ? 2.4 : 0);
+  glow(state.parts?.nanoPwr, 0xff2a2a, on ? 3 : 0);
+  for (const [id, el] of [['usb', '#pwUsb'], ['battery', '#pwBat'], ['sw', '#pwSw']]) { const e = $(el); if (e && e.checked !== p[id]) e.checked = p[id]; }
+  const badge = $('#pwBadge');
+  if (badge) {
+    badge.variant = on ? 'success' : 'neutral';
+    badge.textContent = on ? (motorsOn() ? 'ไฟเข้า + มอเตอร์พร้อม' : p.usb ? 'ไฟจาก USB' : 'ไฟเข้า') : 'ไม่มีไฟ';
+  }
+  if (!silent) click(260);
 }
 
 // ------------------------------------------------------------------ modules
 async function addModule(key, pos, { auto = true } = {}) {
   const info = CATALOG.find((c) => c.key === key);
   const behavior = BEHAVIORS[key] || { env: [] };
-  const root = await stage.load(MODELS + key + '.glb');
+  let root;
+  if (EXTRA_BUILDERS[key]) { root = new THREE.Group(); root.add(EXTRA_BUILDERS[key]()); }
+  else root = await stage.load(MODELS + key + '.glb');
   const id = nextId++;
   root.userData.moduleId = id;
   const pins = {};
-  const hitGeo = new THREE.SphereGeometry(0.0013, 10, 8);
   const leds = [], dLeds = [], pwrLeds = [];
+  let horn = null, wheel = null;
   root.traverse((o) => {
     if (o.userData?.pin) {
       pins[o.userData.pin] = o;
-      const hit = new THREE.Mesh(hitGeo, new THREE.MeshBasicMaterial({ color: 0x00ffaa, transparent: true, opacity: 0, depthTest: false }));
+      const hit = new THREE.Mesh(new THREE.SphereGeometry(o.userData.pin === 'M' ? 0.0026 : 0.0013, 10, 8), new THREE.MeshBasicMaterial({ color: 0x00ffaa, transparent: true, opacity: 0, depthTest: false }));
       hit.userData.anchor = { kind: 'pin', obj: o, pin: o.userData.pin, moduleId: id };
       hit.renderOrder = 10;
       o.add(hit);
     }
+    if (o.name === 'servo_horn') horn = o;
+    if (o.name === 'motor_wheel') wheel = o;
     if (o.isMesh) {
       o.userData.moduleId = id;
       const n = o.name || '';
@@ -146,16 +197,17 @@ async function addModule(key, pos, { auto = true } = {}) {
   laser.position.set(0.0101 + 0.125, 0.0048, 0);
   laser.visible = false;
   root.add(laser);
-  const spot = pos || freeSpot();
+  const spot = pos || freeSpot(key);
   root.position.set(spot.x, 0, spot.z);
+  if (spot.ry != null) root.rotation.y = spot.ry;
   stage.scene.add(root);
-  const m = { id, key, info, behavior, root, pins, env, leds, dLeds, pwrLeds, light, laser, smoke: 0, portMap: {} };
+  const m = { id, key, info, behavior, root, pins, env, leds, dLeds, pwrLeds, light, laser, horn, wheel, wheelAngle: 0, portMap: {} };
   state.modules.push(m);
   if (auto) {
     autoWire(m, { quiet: true });
     if (loadExample(m)) {
       const moved = Object.entries(m.portMap).filter(([a, b]) => a !== b);
-      toast(`วาง ${info.code} แล้ว: ต่อสายและโหลดโค้ดตัวอย่างให้อัตโนมัติ` + (moved.length ? ` (ใช้ ${moved.map(([, b]) => b).join(', ')} แทน ${moved.map(([a]) => a).join(', ')} เพราะพอร์ตเดิมไม่ว่าง)` : '') + ' → กด ▶ รัน');
+      toast(`วาง ${info.code} แล้ว: ต่อสายและโหลดโค้ดตัวอย่างให้อัตโนมัติ` + (moved.length ? ` (ใช้ ${moved.map(([, b]) => b).join(', ')} แทน ${moved.map(([a]) => a).join(', ')} เพราะพอร์ตเดิมไม่ว่าง)` : '') + ' → กด รัน', 'primary');
     }
   }
   select(m);
@@ -164,16 +216,26 @@ async function addModule(key, pos, { auto = true } = {}) {
   return m;
 }
 
-function freeSpot() {
-  const n = state.modules.length;
+function freeSpot(key) {
+  if (key === 'tt-motor') {
+    const n = state.modules.filter((m) => m.key === 'tt-motor').length;
+    // left motor on the left side, right motor on the right side, wheels facing outwards
+    return n % 2 === 0 ? { x: -0.058, z: 0.004, ry: -Math.PI / 2 } : { x: 0.058, z: 0.004, ry: Math.PI / 2 };
+  }
+  if (key === 'servo-sg90') {
+    const n = state.modules.filter((m) => m.key === 'servo-sg90').length;
+    return { x: 0.055 + n * 0.04, z: -0.075 };
+  }
+  const n = state.modules.filter((m) => !EXTRA_BUILDERS[m.key]).length;
   const col = n % 3, row = Math.floor(n / 3);
   return { x: 0.085 + col * 0.05, z: -0.045 + row * 0.045 };
 }
 
 function removeModule(m) {
-  for (const w of [...state.wires]) if (w.a.moduleId === m.id || w.b.moduleId === m.id) removeWire(w);
+  for (const w of [...state.wires]) if (w.a.moduleId === m.id) removeWire(w);
   stage.scene.remove(m.root);
   sound('mod' + m.id, 0);
+  sound('motor' + m.id, 0);
   state.modules = state.modules.filter((x) => x !== m);
   if (state.selected === m) select(null);
   renderModuleList();
@@ -181,16 +243,16 @@ function removeModule(m) {
 }
 
 // ------------------------------------------------------------------ wiring
-function wireColor(a, b) {
-  const port = a.kind === 'port' ? a : b;
+function wireColor(pin, port) {
   if (port.row === 'GND') return '#1c1c1c';
   if (port.row === '5V') return '#d62020';
-  const used = state.wires.filter((w) => (w.a.row || w.b.row) === 'S').length;
+  if (port.row === 'JST') return '#c81e1e';
+  const used = state.wires.filter((w) => w.b.row === 'S').length;
   return SIGNAL_COLORS[used % SIGNAL_COLORS.length];
 }
 
 function addWire(a, b, color, { quiet = false } = {}) {
-  if (a.kind === b.kind) { toast('สายต้องต่อจาก "ขาโมดูล" ไป "หัวต่อบนบอร์ด" (ปลายหนึ่งที่โมดูล อีกปลายที่บอร์ด)'); return null; }
+  if (a.kind === b.kind) { toast('สายต้องต่อจาก "ขาโมดูล" ไป "หัวต่อบนบอร์ด" (ปลายหนึ่งที่โมดูล อีกปลายที่บอร์ด)', 'warning'); return null; }
   const pin = a.kind === 'pin' ? a : b, port = a.kind === 'port' ? a : b;
   const dup = state.wires.find((w) => w.a.moduleId === pin.moduleId && w.a.pin === pin.pin && w.b.port === port.port && w.b.row === port.row);
   if (dup) { if (!quiet) toast('มีสายเส้นนี้อยู่แล้ว'); return null; }
@@ -210,7 +272,6 @@ function removeWire(w) {
   save();
 }
 
-/** Several wires on one pin/slot are drawn piggy-backed (stacked further out). */
 function restack() {
   const pinCount = {}, slotCount = {};
   for (const w of state.wires) {
@@ -226,14 +287,17 @@ function moduleWires(m) {
 }
 
 function pinRole(name, m) {
+  if (name === 'M') return 'JST';
   if (POWER_PINS.includes(name)) return '5V';
-  if (name === 'G' && m && m.pins.R) return 'S'; // green channel of a colour LED
+  if (name === 'G' && m && m.pins.R) return 'S';
   if (GROUND_PINS.includes(name)) return 'GND';
   return 'S';
 }
 
 function powered(m) {
+  if (!boardOn()) return false;
   const ws = moduleWires(m);
+  if (m.behavior.motor) return ws.some((w) => w.row === 'JST');
   const hasV = ws.some((w) => pinRole(w.pin, m) === '5V' && w.row === '5V');
   const hasG = ws.some((w) => pinRole(w.pin, m) === 'GND' && w.row === 'GND');
   const needsV = !m.behavior.noVcc && Object.keys(m.pins).some((p) => pinRole(p, m) === '5V');
@@ -242,52 +306,62 @@ function powered(m) {
 
 function checkWiring() {
   const issues = [];
+  if (!boardOn()) issues.push(['err', 'บอร์ดไม่มีไฟเลี้ยง: เสียบสาย USB หรือ ต่อแบตเตอรี่ + เปิดสวิตช์ ON']);
   for (const m of state.modules) {
     const label = `${m.info.code} ${m.info.name}`;
     const ws = moduleWires(m);
     let reverse = false;
     for (const w of ws) {
       const role = pinRole(w.pin, m);
+      if (role === 'JST' && w.row !== 'JST') issues.push(['warn', `${label}: สายมอเตอร์ต้องเสียบที่ขั้ว ML หรือ MR`]);
+      if (role !== 'JST' && w.row === 'JST') issues.push(['err', `${label}: ขา ${w.pin} เสียบเข้าขั้วมอเตอร์ ${w.port}: ผิดช่อง!`]);
       if (role === '5V' && w.row === 'GND') { issues.push(['err', `${label}: ขา ${w.pin} (ไฟ) เสียบช่องดำ GND: ต่อกลับขั้ว!`]); reverse = true; }
       if (role === 'GND' && w.row === '5V') { issues.push(['err', `${label}: ขา ${w.pin} (กราวด์) เสียบช่องแดง 5V: ต่อกลับขั้ว!`]); reverse = true; }
-      if (role === 'S' && w.row !== 'S') issues.push(['warn', `${label}: ขาสัญญาณ ${w.pin} เสียบ${ROW_TH[w.row]}: ควรเสียบช่องขาว (S)`]);
-      if (role !== 'S' && w.row === 'S') issues.push(['warn', `${label}: ขา ${w.pin} เป็นขาไฟเลี้ยง แต่เสียบช่องขาว (S)`]);
+      if (role === 'S' && (w.row === '5V' || w.row === 'GND')) issues.push(['warn', `${label}: ขาสัญญาณ ${w.pin} เสียบ${ROW_TH[w.row]}: ควรเสียบช่องขาว (S)`]);
+      if ((role === '5V' || role === 'GND') && w.row === 'S') issues.push(['warn', `${label}: ขา ${w.pin} เป็นขาไฟเลี้ยง แต่เสียบช่องขาว (S)`]);
       if (w.row === 'S') {
         if (w.port === 'D3') issues.push(['info', `${label}: D3 ใช้ร่วมกับบัซเซอร์บนบอร์ด อาจมีเสียงรบกวน`]);
         if (w.port === 'A4' || w.port === 'A5') issues.push(['info', `${label}: ${w.port} ใช้ร่วมกับ I2C (จอ OLED) ถ้าใช้จอพร้อมกันจะทำงานผิดพลาด`]);
         if (w.port === 'D0' || w.port === 'D1') issues.push(['info', `${label}: ${w.port} ใช้ร่วมกับ Serial: Serial Monitor อาจรวน`]);
+        if (w.port.startsWith('AA') && !m.behavior.out) issues.push(['info', `${label}: ช่อง ${w.port} เป็นอินพุต Analog ของ ADS1115 อย่างเดียว`]);
       }
     }
     m.reverse = reverse;
+    if (m.behavior.motor) {
+      if (ws.length && !motorsOn()) issues.push(['warn', `${label}: มอเตอร์ต้องใช้ไฟจากแบตเตอรี่: ต่อแบต + เปิดสวิตช์ ON`]);
+      continue;
+    }
     const sigPins = Object.keys(m.pins).filter((p) => pinRole(p, m) === 'S');
-    if (ws.length && !powered(m) && !reverse) issues.push(['warn', `${label}: ยังไม่ได้ต่อไฟเลี้ยงครบ (5V + GND)`]);
+    if (ws.length && boardOn() && !powered(m) && !reverse) issues.push(['warn', `${label}: ยังไม่ได้ต่อไฟเลี้ยงครบ (5V + GND)`]);
     if (ws.length && sigPins.length && !ws.some((w) => pinRole(w.pin, m) === 'S')) issues.push(['warn', `${label}: ยังไม่ได้ต่อขาสัญญาณ`]);
+    if (!ws.length) issues.push(['info', `${label}: ยังไม่ได้ต่อสาย`]);
   }
-  // several wires on the same signal slot = those pins are connected together
   const byPort = {};
-  for (const w of state.wires) { if (w.b.row === 'S') (byPort[w.b.port] ||= []).push(w); }
+  for (const w of state.wires) { if (w.b.row === 'S' || w.b.row === 'JST') (byPort[w.b.port] ||= []).push(w); }
   for (const [port, ws] of Object.entries(byPort)) {
     const mods = new Set(ws.map((w) => w.a.moduleId));
-    if (ws.length > 1) issues.push([mods.size > 1 ? 'warn' : 'info', `พอร์ต ${port} ช่องขาวมีสาย ${ws.length} เส้น: สัญญาณของ ${[...mods].map((id) => state.modules.find((m) => m.id === id)?.info.code).join(', ')} จะต่อถึงกัน`]);
+    if (ws.length > 1) issues.push([mods.size > 1 ? 'warn' : 'info', `พอร์ต ${port} มีสาย ${ws.length} เส้น: ${[...mods].map((id) => state.modules.find((m) => m.id === id)?.info.code).join(', ')} ต่อถึงกัน`]);
   }
-  const list = $('#issues');
-  list.innerHTML = issues.length ? issues.map(([k, t]) => `<li class="${k}">${t}</li>`).join('') : '<li class="ok">การต่อสายถูกต้อง</li>';
+  renderIssues(issues);
 }
 
 const SIGNAL_PORT_ORDER = ['A0', 'A1', 'A2', 'A3', 'A6', 'SV1', 'SV2', 'SV3', 'A4', 'A5', 'D3', 'D1', 'D0'];
 const ANALOG_PINS = ['AO', 'A0', 'VRX', 'VRY'];
 const ANALOG_ONLY_MODULES = ['photoresistor', 'analog-temperature-sensor', 'analog-hall-sensor', 'heartbeat-sensor'];
 
-/** Choose free header ports for a module: README ports when free, otherwise the next free ones. */
 function planPorts(m) {
-  const busy = new Set(state.wires.filter((w) => w.a.moduleId !== m.id && w.b.row === 'S').map((w) => w.b.port));
+  const busy = new Set(state.wires.filter((w) => w.a.moduleId !== m.id && (w.b.row === 'S' || w.b.row === 'JST')).map((w) => w.b.port));
   const map = {};
-  const sigs = (m.info.wires || []).filter((w) => w.role === 'S' && !w.optional);
-  for (const w of sigs) {
+  for (const w of (m.info.wires || []).filter((w) => (w.role === 'S' || w.role === 'M') && !w.optional)) {
     if (map[w.port]) continue;
-    const analog = ANALOG_PINS.includes(w.pin.toUpperCase()) || ANALOG_ONLY_MODULES.includes(m.key);
-    const ok = (p) => !busy.has(p) && (p !== 'A6' || analog) && !(p.startsWith('SV') && analog);
-    const port = ok(w.port) ? w.port : SIGNAL_PORT_ORDER.find(ok);
+    let port;
+    if (w.role === 'M') port = ['ML', 'MR'].find((p) => !busy.has(p)) || 'ML';
+    else if (m.behavior.servo) port = ['SV1', 'SV2', 'SV3'].find((p) => !busy.has(p)) || SIGNAL_PORT_ORDER.find((p) => !busy.has(p) && p !== 'A6');
+    else {
+      const analog = ANALOG_PINS.includes(w.pin.toUpperCase()) || ANALOG_ONLY_MODULES.includes(m.key);
+      const ok = (p) => !busy.has(p) && (p !== 'A6' || analog) && !(p.startsWith('SV') && analog);
+      port = ok(w.port) ? w.port : SIGNAL_PORT_ORDER.find(ok);
+    }
     if (!port) continue;
     map[w.port] = port;
     busy.add(port);
@@ -298,46 +372,44 @@ function planPorts(m) {
 function autoWire(m, { quiet = false } = {}) {
   for (const w of [...state.wires]) if (w.a.moduleId === m.id) removeWire(w);
   const portMap = planPorts(m);
-  const firstSig = (m.info.wires || []).filter((w) => w.role === 'S').sort((a, b) => a.optional - b.optional)[0];
+  const firstSig = (m.info.wires || []).filter((w) => w.role === 'S' && !w.optional)[0];
   const powerCol = firstSig ? portMap[firstSig.port] || firstSig.port : 'A0';
-  const wanted = (m.info.wires || []).filter((w) => !w.optional).map((w) => ({ ...w, port: w.role === 'S' ? portMap[w.port] || w.port : powerCol }));
+  const wanted = (m.info.wires || []).filter((w) => !w.optional).map((w) => ({ ...w, port: w.role === 'S' || w.role === 'M' ? portMap[w.port] || w.port : powerCol }));
   const used = new Set();
   const signalPool = Object.keys(m.pins).filter((p) => pinRole(p, m) === 'S');
-  const sorted = [...wanted].sort((a, b) => (a.optional - b.optional) || ((a.role !== 'S') - (b.role !== 'S')));
+  const sorted = [...wanted].sort((a, b) => (a.role !== 'S') - (b.role !== 'S'));
   let n = 0;
   for (const w of sorted) {
     let pin = m.pins[w.pin] && !used.has(w.pin) ? w.pin : null;
     if (!pin && w.role === '5V') pin = POWER_PINS.find((p) => m.pins[p] && !used.has(p));
     if (!pin && w.role === 'GND') pin = GROUND_PINS.find((p) => m.pins[p] && !used.has(p) && pinRole(p, m) === 'GND');
     if (!pin && w.role === 'S') {
-      const analog = ['AO', 'A0', 'VRX', 'VRY'].includes(w.pin.toUpperCase());
+      const analog = ANALOG_PINS.includes(w.pin.toUpperCase());
       pin = [...signalPool].sort((a, b) => ((a === 'AO') === analog ? 0 : 1) - ((b === 'AO') === analog ? 0 : 1)).find((p) => !used.has(p));
     }
     if (!pin) continue;
-    const port = state.ports.find((p) => p.port === w.port && p.row === w.role);
+    const row = w.role === 'M' ? 'JST' : w.role;
+    const port = state.ports.find((p) => p.port === w.port && p.row === row);
     if (!port) continue;
     used.add(pin);
-    const a = { kind: 'pin', obj: m.pins[pin], pin, moduleId: m.id };
-    const b = { kind: 'port', obj: port.obj, port: port.port, row: port.row };
-    if (addWire(a, b, null, { quiet: true })) n++;
+    if (addWire({ kind: 'pin', obj: m.pins[pin], pin, moduleId: m.id }, { kind: 'port', obj: port.obj, port: port.port, row: port.row }, null, { quiet: true })) n++;
   }
   m.portMap = portMap;
   const moved = Object.entries(portMap).filter(([a, b]) => a !== b);
-  if (!quiet) toast(`ต่อสายอัตโนมัติ ${n} เส้น` + (moved.length ? ` (ย้าย ${moved.map(([a, b]) => a + '→' + b).join(', ')} เพราะพอร์ตเดิมมีโมดูลอื่นใช้อยู่)` : ' ตามตารางในเอกสาร'));
+  if (!quiet) toast(`ต่อสายอัตโนมัติ ${n} เส้น` + (moved.length ? ` (ย้าย ${moved.map(([a, b]) => a + '→' + b).join(', ')} เพราะพอร์ตเดิมมีโมดูลอื่นใช้อยู่)` : ' ตามตารางในเอกสาร'), 'success');
   return portMap;
 }
 
 // ---- example code with pins remapped to the ports actually used
 const PORT_NUM = { A0: 14, A1: 15, A2: 16, A3: 17, A4: 18, A5: 19, A6: 20, SV1: 10, SV2: 11, SV3: 12, D3: 3, D1: 1, D0: 0 };
 function remapCode(code, portMap = {}) {
-  const pairs = Object.entries(portMap).filter(([a, b]) => a !== b);
+  const pairs = Object.entries(portMap).filter(([a, b]) => a !== b && PORT_NUM[a] != null && PORT_NUM[b] != null);
   if (!pairs.length) return code;
-  const label = (p) => p;
   const codeTokens = [], noteTokens = [];
   for (const [from, to] of pairs) {
     if (from.startsWith('A')) codeTokens.push([new RegExp(`\\b${from}\\b`, 'g'), to.startsWith('A') ? to : String(PORT_NUM[to])]);
     codeTokens.push([new RegExp(`\\b${PORT_NUM[from]}\\b`, 'g'), String(PORT_NUM[to])]);
-    noteTokens.push([new RegExp(`\\b${from}\\b`, 'g'), label(to)]);
+    noteTokens.push([new RegExp(`\\b${from}\\b`, 'g'), to]);
     noteTokens.push([new RegExp(`\\bD${PORT_NUM[from]}\\b`, 'g'), 'D' + PORT_NUM[to]]);
     noteTokens.push([new RegExp(`\\b${PORT_NUM[from]}\\b`, 'g'), String(PORT_NUM[to])]);
   }
@@ -346,7 +418,7 @@ function remapCode(code, portMap = {}) {
     for (const [re, to] of tokens) text = text.replace(re, () => { marks.push(to); return `\u0001${marks.length - 1}\u0001`; });
     return text.replace(/\u0001(\d+)\u0001/g, (_, i) => marks[+i]);
   };
-  const isPinLine = (l) => /^\s*#\s*define\s+\w+\s/.test(l) || /\b(?:const\s+)?(?:int|byte|uint8_t)\s+\w*(?:pin|PIN|Pin)\w*\s*=/.test(l);
+  const isPinLine = (l) => /^\s*#\s*define\s+\w+\s/.test(l) || /\b(?:const\s+)?(?:int|byte|uint8_t)\s+\w*(?:pin|PIN|Pin)\w*\s*=/.test(l) || /\.attach\s*\(/.test(l);
   return code.split('\n').map((line) => {
     const i = line.indexOf('//');
     const codePart = i < 0 ? line : line.slice(0, i);
@@ -370,24 +442,28 @@ function moduleOutputs(m, t) {
   return m.behavior.out(m.env, t, null) || {};
 }
 
+function signalAt(port, t) {
+  for (const w of state.wires) {
+    if (w.b.port !== port || w.b.row !== 'S') continue;
+    const m = state.modules.find((x) => x.id === w.a.moduleId);
+    if (!m) continue;
+    const v = moduleOutputs(m, t)[w.a.pin];
+    if (v === undefined) continue;
+    return { v, m };
+  }
+  return null;
+}
+
 const hw = {
   readPin(pin) {
-    if (pin === 2) return state.d2Pressed ? 0 : 5;           // onboard button, pull-up
-    if (pin === 21) return state.knob * 5;                    // A7 knob
+    if (pin === 2) return state.d2Pressed ? 0 : 5;
+    if (pin === 21) return state.knob * 5;
     const port = PIN_TO_PORT[pin];
     if (!port) return null;
-    const t = performance.now();
-    for (const w of state.wires) {
-      if (w.b.port !== port || w.b.row !== 'S') continue;
-      const m = state.modules.find((x) => x.id === w.a.moduleId);
-      if (!m) continue;
-      const outs = moduleOutputs(m, t);
-      const v = outs[w.a.pin];
-      if (v === undefined) continue;
-      if (v === 'float') return mcu.mode[pin] === 'INPUT_PULLUP' ? 5 : (m.behavior.lib ? 5 : null);
-      return v;
-    }
-    return null;
+    const s = signalAt(port, performance.now());
+    if (!s) return null;
+    if (s.v === 'float') return mcu.mode[pin] === 'INPUT_PULLUP' ? 5 : (s.m.behavior.lib ? 5 : null);
+    return s.v;
   },
   onOutput(pin) {
     if (pin === 13 && state.parts?.nanoL) {
@@ -404,7 +480,7 @@ const hw = {
   noTone(pin) { if (pin === 3) sound('d3', 0); },
   serialBegin() {},
   serialOut(s) { serialWrite(s); },
-  warn(msg) { if (!state.warned.has(msg)) { state.warned.add(msg); serialWrite(`\n⚠ ${msg}\n`, 'warn'); } },
+  warn(msg) { if (!state.warned.has(msg)) { state.warned.add(msg); serialWrite(`\n⚠ ${msg}\n`); } },
   error(e) { showError(e); stopSketch(); },
   oled,
   onServo(pin, a) { state.servo[pin] = a; },
@@ -423,11 +499,13 @@ const hw = {
     if (!ok || !state.irQueue.length) return null;
     return state.irQueue.shift();
   },
-  irSend(pin, cmd) {
-    serialWrite('', null);
-    for (const m of state.modules) if (m.behavior.lib === 'ir' && powered(m)) state.irQueue.push({ command: cmd, raw: cmd });
+  irSend(pin, cmd) { for (const m of state.modules) if (m.behavior.lib === 'ir' && powered(m)) state.irQueue.push({ command: cmd, raw: cmd }); },
+  adsRead(ch) {
+    // onboard ADS1115 (GAIN_TWOTHIRDS, +-6.144 V) on header AA0-AA3
+    const s = signalAt('AA' + ch, performance.now());
+    const v = !s || s.v === 'float' ? 0.02 * Math.random() : s.v;
+    return Math.max(0, Math.min(32767, Math.round((v / 6.144) * 32768)));
   },
-  adsRead() { return 0; },
   async pollInterrupts() {
     for (const it of mcu.interrupts) {
       const v = mcu.voltage(it.pin) >= 2.5 ? 1 : 0;
@@ -442,7 +520,6 @@ const hw = {
 };
 mcu.hw = hw;
 
-// per-frame visuals for module outputs (LEDs, buzzers, relay, laser)
 function moduleIO(m) {
   const portOf = (pin) => moduleWires(m).find((w) => w.pin === pin && w.row === 'S');
   return {
@@ -453,57 +530,72 @@ function moduleIO(m) {
       return mcu.pwm[p] != null ? mcu.pwm[p] / 255 : mcu.out[p] ? 1 : 0;
     },
     freq(pin) { const w = portOf(pin); if (!w) return 0; const p = PORT_TO_PIN[w.port]; return mcu.running ? mcu.tones[p] || 0 : 0; },
+    servo(pin) { const w = portOf(pin); if (!w) return null; return state.servo[PORT_TO_PIN[w.port]]; },
   };
 }
 
-// software-PWM estimator: average the output level of every pin over ~40 ms
-const pwmAcc = {};
-setInterval(() => {
-  if (!mcu.running) return;
-  for (let p = 0; p < 22; p++) {
-    const a = (pwmAcc[p] ||= { s: 0, n: 0 });
-    a.s += mcu.out[p] ? 1 : 0; a.n++;
-  }
-}, 1);
+function motorSpeed(port) {
+  if (!mcu.running || !motorsOn()) return 0;
+  const [i1, i2, pw] = MOTOR_PINS[port];
+  const sp = mcu.pwm[pw] != null ? mcu.pwm[pw] : mcu.out[pw] ? 255 : 0;
+  if (!sp || mcu.out[i1] === mcu.out[i2]) return 0;
+  return (mcu.out[i2] ? 1 : -1) * (sp / 255);
+}
+
 setInterval(() => {
   mcu.softPwm = {};
-  // fast loops of digitalWrite (software PWM): fraction of HIGH writes
   for (const [p, c] of Object.entries(mcu.wcount || {})) { if (c.n > 40 && c.h > 0 && c.h < c.n) mcu.softPwm[p] = c.h / c.n; c.h = c.n = 0; }
-  // slow toggling (blink faster than the eye): fraction of time HIGH
-  for (const [p, a] of Object.entries(pwmAcc)) { if (mcu.softPwm[p] == null && a.n > 5 && a.s > 0 && a.s < a.n && a.n / Math.max(1, a.s) < 50) mcu.softPwm[p] = null; a.s = a.n = 0; }
 }, 60);
 
+let lastT = 0;
 stage.onFrame.push((t) => {
+  const dt = Math.min(0.05, (t - lastT) / 1000 || 0);
+  lastT = t;
   for (const m of state.modules) {
     const on = powered(m) && !m.reverse;
     for (const p of m.pwrLeds) { p.material.emissive = new THREE.Color(0xff2020); p.material.emissiveIntensity = on ? 3 : 0; }
     const dl = on && m.behavior.dLed ? m.behavior.dLed(m.env, t) : false;
     for (const p of m.dLeds) { p.material.emissive = new THREE.Color(0xff2020); p.material.emissiveIntensity = dl ? 3 : 0; }
     const io = moduleIO(m);
+    if (m.behavior.servo && m.horn) {
+      const a = on ? io.servo('S') : null;
+      if (a != null) {
+        const target = THREE.MathUtils.degToRad(a - 90);
+        const cur = m.horn.rotation.y;
+        const step = Math.sign(target - cur) * Math.min(Math.abs(target - cur), dt * 10.5); // ~0.1 s / 60 deg
+        if (Math.abs(step) > 1e-4) { m.horn.rotation.y = cur + step; sound('servo' + m.id, 1800 + Math.random() * 200, 'sawtooth'); }
+        else sound('servo' + m.id, 0);
+      } else sound('servo' + m.id, 0);
+      continue;
+    }
+    if (m.behavior.motor && m.wheel) {
+      const w = moduleWires(m).find((x) => x.row === 'JST');
+      const sp = w && on ? motorSpeed(w.port) : 0;
+      m.wheelAngle += sp * dt * 2 * Math.PI * 3.3; // ~200 rpm at full speed
+      m.wheel.rotation.z = -m.wheelAngle;
+      sound('motor' + m.id, Math.abs(sp) > 0.05 ? 90 + Math.abs(sp) * 160 : 0, 'sawtooth');
+      continue;
+    }
     const v = m.behavior.view ? m.behavior.view(io, t) : {};
     if (v.led) {
       const [r, g, b] = v.led;
       const k = Math.max(r, g, b);
       const col = new THREE.Color(r, g, b);
-      for (const p of m.leds) { p.material.emissive = col; p.material.emissiveIntensity = k * 4; }
-      m.light.color = col; m.light.intensity = k * 0.02;
+      for (const p of m.leds) { p.material.emissive = col; p.material.emissiveIntensity = on ? k * 4 : 0; }
+      m.light.color = col; m.light.intensity = on ? k * 0.02 : 0;
     } else if (v.relay !== undefined) {
-      for (const p of m.leds) { p.material.emissive = new THREE.Color(0xff2020); p.material.emissiveIntensity = v.relay ? 3 : 0; }
-      if (v.relay !== m.lastRelay) { if (m.lastRelay !== undefined) click(); m.lastRelay = v.relay; }
+      const r = v.relay && on;
+      for (const p of m.leds) { p.material.emissive = new THREE.Color(0xff2020); p.material.emissiveIntensity = r ? 3 : 0; }
+      if (r !== m.lastRelay) { if (m.lastRelay !== undefined) click(); m.lastRelay = r; }
     }
     m.laser.visible = !!v.laser && on;
-    if (v.ir !== undefined) for (const p of m.leds) { p.material.emissive = new THREE.Color(0x7a3cff); p.material.emissiveIntensity = v.ir && on && $('#irCam').checked ? 2.5 : 0; }
+    if (v.ir !== undefined) for (const p of m.leds) { p.material.emissive = new THREE.Color(0x7a3cff); p.material.emissiveIntensity = v.ir && on && $('#irCam')?.checked ? 2.5 : 0; }
     const f = on ? v.buzzer : 0;
     sound('mod' + m.id, f === -1 ? 0 : f || 0, 'square');
-    if (m.reverse && on === false) m.smoke = Math.min(1, m.smoke + 0.01);
   }
-  // knob + button animation
   if (state.parts?.knob) state.parts.knob.rotation.y = -(state.knob - 0.5) * Math.PI * 1.5;
   const btn = state.parts?.button;
-  if (btn) {
-    btn.userData.y0 ??= btn.position.y;
-    btn.position.y = btn.userData.y0 - (state.d2Pressed ? 0.9 : 0); // board nodes are in millimetres
-  }
+  if (btn) { btn.userData.y0 ??= btn.position.y; btn.position.y = btn.userData.y0 - (state.d2Pressed ? 0.9 : 0); }
   updateStatus();
 });
 
@@ -513,6 +605,7 @@ let drag = null;
 let hoverAnchor = null;
 const ghost = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: 0x6ee7ff }));
 stage.scene.add(ghost);
+function clearGhost() { ghost.geometry.dispose(); ghost.geometry = new THREE.BufferGeometry(); }
 
 function anchorsList() {
   const list = state.ports.map((p) => p.hit);
@@ -531,15 +624,22 @@ canvas.addEventListener('pointermove', (e) => {
   if (hoverAnchor && hoverAnchor !== a) hoverAnchor.material.opacity = 0;
   hoverAnchor = a || null;
   if (a) a.material.opacity = 0.85;
-  canvas.style.cursor = a ? 'crosshair' : 'default';
   const tip = $('#tip');
+  let text = '';
   if (a) {
     const an = a.userData.anchor;
-    tip.textContent = an.kind === 'port' ? `พอร์ต ${an.port} · ${ROW_TH[an.row]}` : `ขา ${an.pin} ของ ${state.modules.find((m) => m.id === an.moduleId)?.info.code}`;
-    tip.style.left = e.clientX + 14 + 'px';
-    tip.style.top = e.clientY + 10 + 'px';
-    tip.hidden = false;
-  } else tip.hidden = true;
+    text = an.kind === 'port' ? (an.row === 'JST' ? `ขั้วมอเตอร์ ${an.port} (${an.port === 'ML' ? 'ซ้าย D9/D4/D5' : 'ขวา D7/D8/D6'})` : `พอร์ต ${an.port} · ${ROW_TH[an.row]}`) : `ขา ${an.pin} ของ ${state.modules.find((m) => m.id === an.moduleId)?.info.code}`;
+  } else {
+    const bh = state.board ? stage.pick(e, [state.board, state.usbCable, state.batteryPack].filter(Boolean))[0]?.object : null;
+    const n = bh?.name || '';
+    if (/^switch/.test(n)) text = `สวิตช์ไฟ: ${state.power.sw ? 'ON' : 'OFF'} (คลิกเพื่อสลับ)`;
+    else if (/^nano_usb/.test(n) || bh?.userData.powerPart === 'usb') text = state.power.usb ? 'สาย USB (คลิกเพื่อถอด)' : 'พอร์ต USB (คลิกเพื่อเสียบสาย)';
+    else if (/^tplug/.test(n) || bh?.userData.powerPart === 'battery') text = state.power.battery ? 'แบตเตอรี่ LiPo 7.4V (คลิกเพื่อถอด)' : 'ขั้ว T-Plug (คลิกเพื่อต่อแบตเตอรี่)';
+    else if (/^btn_/.test(n)) text = 'ปุ่ม D2 (กดค้าง)';
+    else if (/^(knob|pot_)/.test(n)) text = 'Knob A7 (ลากซ้าย-ขวา)';
+  }
+  canvas.style.cursor = a ? 'crosshair' : text ? 'pointer' : 'default';
+  if (text) { tip.textContent = text; tip.style.left = e.clientX + 14 + 'px'; tip.style.top = e.clientY + 10 + 'px'; tip.hidden = false; } else tip.hidden = true;
   if (state.pending) {
     const p = stage.groundPoint(e);
     const start = new THREE.Vector3();
@@ -547,9 +647,8 @@ canvas.addEventListener('pointermove', (e) => {
     if (p) {
       p.y = 0.02;
       const mid = start.clone().lerp(p, 0.5); mid.y = Math.max(start.y, p.y) + 0.02;
-      const curve = new THREE.QuadraticBezierCurve3(start, mid, p);
       ghost.geometry.dispose();
-      ghost.geometry = new THREE.TubeGeometry(curve, 30, 0.0005, 6);
+      ghost.geometry = new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(start, mid, p), 30, 0.0005, 6);
     }
   }
 });
@@ -557,7 +656,7 @@ canvas.addEventListener('pointermove', (e) => {
 canvas.addEventListener('pointerdown', (e) => {
   if (e.button === 2) return;
   audio?.resume?.();
-  // grab the Dupont housing of an existing wire -> unplug that end and move it
+  const lockOrbit = () => { stage.controls.enabled = false; setTimeout(() => (stage.controls.enabled = true), 0); };
   if (!state.pending) {
     const hh = stage.pick(e, state.wires.flatMap((w) => [w.h1, w.h2]))[0];
     if (hh) {
@@ -567,33 +666,34 @@ canvas.addEventListener('pointerdown', (e) => {
       removeWire(wire);
       state.pending = keep;
       toast(end === 'a' ? 'ถอดปลายฝั่งโมดูลแล้ว: คลิกขาโมดูลที่จะเสียบใหม่ (Esc = ทิ้งสาย)' : 'ถอดปลายฝั่งบอร์ดแล้ว: คลิกช่องบนหัวต่อที่จะเสียบใหม่ (Esc = ทิ้งสาย)');
-      stage.controls.enabled = false;
-      setTimeout(() => (stage.controls.enabled = true), 0);
+      lockOrbit();
       return;
     }
   }
   const anchors = stage.pick(e, anchorsList());
   if (anchors.length) {
     const an = anchors[0].object.userData.anchor;
-    if (!state.pending) { state.pending = an; toast(an.kind === 'port' ? `เลือก ${an.port} ${ROW_TH[an.row]} แล้ว: คลิกขาโมดูลปลายทาง` : `เลือกขา ${an.pin} แล้ว: คลิกหัวต่อบนบอร์ดปลายทาง (ช่องขาว/แดง/ดำ)`); }
+    if (!state.pending) { state.pending = an; toast(an.kind === 'port' ? `เลือก ${an.port} ${ROW_TH[an.row]} แล้ว: คลิกขาโมดูลปลายทาง` : `เลือกขา ${an.pin} แล้ว: คลิกช่องบนหัวต่อปลายทาง`); }
     else {
       if (an !== state.pending) addWire(state.pending, an, state.pendingColor);
       state.pending = null;
       state.pendingColor = null;
-      ghost.geometry.dispose(); ghost.geometry = new THREE.BufferGeometry();
+      clearGhost();
     }
-    stage.controls.enabled = false;
-    setTimeout(() => (stage.controls.enabled = true), 0);
+    lockOrbit();
     return;
   }
-  // onboard controls
-  const boardHits = state.board ? stage.pick(e, [state.board]) : [];
-  const bh = boardHits[0]?.object?.name || '';
-  if (bh.startsWith('btn_cap') || bh.startsWith('btn_base')) { state.d2Pressed = true; stage.controls.enabled = false; return; }
-  if (bh.startsWith('knob') || bh.startsWith('pot_')) { drag = null; state.knobDrag = { x: e.clientX, k: state.knob }; stage.controls.enabled = false; return; }
-  // modules
-  const mods = state.modules.map((m) => m.root);
-  const mh = stage.pick(e, mods)[0];
+  // board controls and power accessories
+  const ph = stage.pick(e, [state.board, state.usbCable, state.batteryPack].filter((o) => o && o.visible !== false))[0]?.object;
+  const n = ph?.name || '';
+  if (ph) {
+    if (/^switch/.test(n)) { setPower({ sw: !state.power.sw }); lockOrbit(); return; }
+    if (/^nano_usb/.test(n) || ph.userData.powerPart === 'usb') { setPower({ usb: !state.power.usb }); lockOrbit(); return; }
+    if (/^tplug/.test(n) || ph.userData.powerPart === 'battery') { setPower({ battery: !state.power.battery }); lockOrbit(); return; }
+    if (/^btn_/.test(n)) { state.d2Pressed = true; stage.controls.enabled = false; return; }
+    if (/^(knob|pot_)/.test(n)) { state.knobDrag = { x: e.clientX, k: state.knob }; stage.controls.enabled = false; return; }
+  }
+  const mh = stage.pick(e, state.modules.map((m) => m.root))[0];
   if (mh) {
     let o = mh.object; while (o && !o.userData.moduleId) o = o.parent;
     const m = state.modules.find((x) => x.id === o.userData.moduleId);
@@ -604,96 +704,121 @@ canvas.addEventListener('pointerdown', (e) => {
   }
   const wh = stage.pick(e, state.wires.map((w) => w.mesh))[0];
   if (wh) { const w = wh.object.userData.wire; state.wires.forEach((x) => x.setHighlight(false)); w.setHighlight(true); state.selWire = w; toast('เลือกสายแล้ว: กด Delete หรือคลิกขวาเพื่อลบ'); }
-  if (state.pending) { state.pending = null; ghost.geometry.dispose(); ghost.geometry = new THREE.BufferGeometry(); }
+  if (state.pending) { state.pending = null; clearGhost(); }
 });
 
-window.addEventListener('pointermove', (e) => {
-  if (state.knobDrag) { state.knob = Math.min(1, Math.max(0, state.knobDrag.k + (e.clientX - state.knobDrag.x) / 300)); }
-});
-window.addEventListener('pointerup', () => {
-  if (drag) save();
-  drag = null; state.d2Pressed = false; state.knobDrag = null; stage.controls.enabled = true;
-});
+window.addEventListener('pointermove', (e) => { if (state.knobDrag) state.knob = Math.min(1, Math.max(0, state.knobDrag.k + (e.clientX - state.knobDrag.x) / 300)); });
+window.addEventListener('pointerup', () => { if (drag) save(); drag = null; state.d2Pressed = false; state.knobDrag = null; stage.controls.enabled = true; });
 canvas.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   const wh = stage.pick(e, state.wires.map((w) => w.mesh))[0];
   if (wh) removeWire(wh.object.userData.wire);
 });
 window.addEventListener('keydown', (e) => {
-  if (e.target.closest('textarea, input, .CodeMirror')) return;
+  if (e.target.closest('textarea, input, .CodeMirror, sl-input, sl-textarea')) return;
   if ((e.key === 'Delete' || e.key === 'Backspace') && state.selWire) { removeWire(state.selWire); state.selWire = null; }
   if (e.key === 'r' && state.selected) { state.selected.root.rotation.y += Math.PI / 2; state.wires.forEach((w) => w.update()); save(); }
-  if (e.key === 'Escape') { state.pending = null; ghost.geometry.dispose(); ghost.geometry = new THREE.BufferGeometry(); }
+  if (e.key === 'Escape') { state.pending = null; clearGhost(); }
 });
 
-// ------------------------------------------------------------------ UI: library, selection, env controls
+// ------------------------------------------------------------------ UI
+const CAT_TH = { sensor: 'เซนเซอร์', module: 'โมดูล', actuator: 'มอเตอร์' };
 function renderLibrary() {
-  const q = $('#search').value.trim().toLowerCase();
-  const cat = $('#libCat').value;
-  $('#library').innerHTML = CATALOG.filter((c) => (cat === 'all' || c.category === cat) && (`${c.code} ${c.name} ${c.desc}`.toLowerCase().includes(q))).map((c) => `
-    <button class="card" data-key="${c.key}" title="${c.desc.replace(/"/g, '&quot;')}">
-      ${c.image ? `<img src="${ASSETS + c.image}" alt="" loading="lazy">` : '<span class="noimg"></span>'}
-      <span class="ky">${c.code}</span><span class="nm">${c.name}</span>
-    </button>`).join('');
+  const q = ($('#search').value || '').trim().toLowerCase();
+  const cat = $('#libCat').value || 'all';
+  $('#library').innerHTML = CATALOG.filter((c) => (cat === 'all' || c.category === cat) && `${c.code} ${c.name} ${c.desc}`.toLowerCase().includes(q)).map((c) => `
+    <button class="card" data-key="${c.key}" title="${esc(c.desc)}">
+      ${c.image ? `<img src="${ASSETS + c.image}" alt="" loading="lazy">` : `<span class="noimg"><sl-icon name="${c.icon || 'cpu'}"></sl-icon></span>`}
+      <span class="ky">${esc(c.code)}</span><span class="nm">${esc(c.name)}</span>
+    </button>`).join('') || '<p class="muted small">ไม่พบโมดูล</p>';
 }
 
 function renderModuleList() {
-  $('#placed').innerHTML = state.modules.map((m) => `<li class="${state.selected === m ? 'sel' : ''}" data-id="${m.id}"><b>${m.info.code}</b> ${m.info.name}</li>`).join('') || '<li class="empty">ยังไม่มีโมดูล: เลือกจากคลังด้านซ้าย</li>';
+  $('#placed').innerHTML = state.modules.map((m) => `<sl-tag size="small" pill removable data-id="${m.id}" variant="${state.selected === m ? 'primary' : 'neutral'}">${esc(m.info.code)} ${esc(m.info.name)}</sl-tag>`).join('') || '<span class="muted small">ยังไม่มีโมดูลบนโต๊ะ</span>';
 }
 
 function select(m) {
   state.selected = m;
   renderModuleList();
   const box = $('#modulePanel');
-  if (!m) { box.innerHTML = '<p class="muted">คลิกโมดูลในฉากเพื่อดู/ปรับค่าสภาพแวดล้อม</p>'; return; }
-  const ex = m.info.examples.map((e, i) => `<option value="${i}">${e.title}</option>`).join('');
+  if (!m) {
+    box.innerHTML = `<div class="empty-state"><sl-icon name="hand-index-thumb"></sl-icon><p>เลือกโมดูลจากคลังด้านซ้าย หรือคลิกโมดูลบนโต๊ะ<br>เพื่อดูรายละเอียดและปรับสภาพแวดล้อม</p></div>`;
+    return;
+  }
+  const ex = m.info.examples.map((e, i) => `<sl-option value="${i}">${esc(e.title)}</sl-option>`).join('');
   box.innerHTML = `
-    <div class="modhead"><b>${m.info.code}</b> ${m.info.name}</div>
-    <p class="muted small">${m.info.desc}</p>
-    <div class="row">
-      <button id="btnAuto" class="primary">ต่อสายอัตโนมัติ</button>
-      <button id="btnRemove" class="ghost danger">ลบโมดูล</button>
+    <div class="modhead"><sl-badge variant="primary" pill>${esc(m.info.code)}</sl-badge> <b>${esc(m.info.name)}</b></div>
+    <p class="muted small">${esc(m.info.desc)}</p>
+    <div class="btnrow">
+      <sl-button size="small" variant="success" id="btnAuto"><sl-icon slot="prefix" name="plug"></sl-icon>ต่อสายอัตโนมัติ</sl-button>
+      <sl-button size="small" id="btnUnwire"><sl-icon slot="prefix" name="scissors"></sl-icon>ถอดสายทั้งหมด</sl-button>
+      <sl-button size="small" variant="danger" outline id="btnRemove"><sl-icon slot="prefix" name="trash"></sl-icon>ลบ</sl-button>
     </div>
-    <div class="row"><select id="exSel">${ex}</select><button id="btnLoadEx">โหลดโค้ด</button></div>
-    <a class="small" href="${ASSETS + m.info.readme}" target="_blank" rel="noopener">เปิดเอกสาร README</a>
+    <div class="btnrow">
+      <sl-select size="small" id="exSel" value="0" hoist>${ex}</sl-select>
+      <sl-button size="small" id="btnLoadEx"><sl-icon slot="prefix" name="code-slash"></sl-icon>โหลดโค้ด</sl-button>
+    </div>
+    <a class="small link" href="${ASSETS + m.info.readme}" target="_blank" rel="noopener"><sl-icon name="book"></sl-icon> เปิดเอกสาร</a>
+    <sl-divider></sl-divider>
     <div id="envBox"></div>`;
-  $('#btnAuto').onclick = () => autoWire(m);
-  $('#btnRemove').onclick = () => removeModule(m);
-  $('#btnLoadEx').onclick = () => { if (loadExample(m, +$('#exSel').value)) toast('โหลดโค้ดตัวอย่างแล้ว (ปรับเลขขาตามพอร์ตที่ต่อจริง): กด ▶ รัน'); };
+  $('#btnAuto').addEventListener('click', () => autoWire(m));
+  $('#btnUnwire').addEventListener('click', () => { for (const w of [...state.wires]) if (w.a.moduleId === m.id) removeWire(w); toast('ถอดสายของโมดูลนี้แล้ว'); });
+  $('#btnRemove').addEventListener('click', () => removeModule(m));
+  $('#btnLoadEx').addEventListener('click', () => { if (loadExample(m, +$('#exSel').value)) { toast('โหลดโค้ดตัวอย่างแล้ว (เลขขาตรงกับพอร์ตที่ต่อจริง)', 'success'); showTab('code'); } });
   renderEnv(m);
+  showTab('module');
 }
 
+const IR_KEYS = [['1', 0x45], ['2', 0x46], ['3', 0x47], ['4', 0x44], ['5', 0x40], ['6', 0x43], ['7', 0x07], ['8', 0x15], ['9', 0x09], ['*', 0x16], ['0', 0x19], ['#', 0x0d], ['▲', 0x18], ['◀', 0x08], ['OK', 0x1c], ['▶', 0x5a], ['▼', 0x52]];
 function renderEnv(m) {
   const box = $('#envBox');
   const ctrls = m.behavior.env || [];
-  if (!ctrls.length) { box.innerHTML = '<p class="muted small">โมดูลนี้เป็นเอาต์พุต: สั่งงานด้วยโค้ด</p>'; return; }
+  if (!ctrls.length) {
+    const hint = m.behavior.servo ? 'เซอร์โวหมุนตามคำสั่ง Servo.write() ในโค้ด' : m.behavior.motor ? 'มอเตอร์หมุนตามขา TB6612 (ต้องต่อแบตเตอรี่ + เปิดสวิตช์ ON)' : 'โมดูลนี้เป็นเอาต์พุต: สั่งงานด้วยโค้ด';
+    box.innerHTML = `<p class="muted small"><sl-icon name="info-circle"></sl-icon> ${hint}</p>`;
+    return;
+  }
   box.innerHTML = '<h4>สภาพแวดล้อมจำลอง</h4>' + ctrls.map((c) => {
-    if (c.type === 'range') return `<label class="ctl">${c.label} <output id="o_${c.id}">${m.env[c.id]}${c.unit || ''}</output><input type="range" data-id="${c.id}" min="${c.min}" max="${c.max}" step="${c.step || 1}" value="${m.env[c.id]}"></label>`;
-    if (c.type === 'toggle') return `<label class="ctl tog"><input type="checkbox" data-id="${c.id}" ${m.env[c.id] ? 'checked' : ''}> ${c.label}</label>`;
-    if (c.type === 'hold') return `<button class="hold" data-id="${c.id}">${c.label}</button>`;
-    if (c.type === 'select') return `<label class="ctl">${c.label}<select data-id="${c.id}">${c.options.map(([v, t]) => `<option value="${v}" ${m.env[c.id] === v ? 'selected' : ''}>${t}</option>`).join('')}</select></label>`;
-    if (c.type === 'encoder') return `<div class="row"><button data-enc="-1">⟲ ทวนเข็ม</button><button data-enc="1">⟳ ตามเข็ม</button></div>`;
-    if (c.type === 'remote') return `<div class="remote">${[['1', 0x45], ['2', 0x46], ['3', 0x47], ['4', 0x44], ['5', 0x40], ['6', 0x43], ['7', 0x07], ['8', 0x15], ['9', 0x09], ['*', 0x16], ['0', 0x19], ['#', 0x0d], ['▲', 0x18], ['◀', 0x08], ['OK', 0x1c], ['▶', 0x5a], ['▼', 0x52]].map(([t, c]) => `<button data-ir="${c}">${t}</button>`).join('')}</div>`;
+    if (c.type === 'range') return `<div class="ctl"><div class="ctl-head"><span>${esc(c.label)}</span><output id="o_${c.id}">${m.env[c.id]}${c.unit || ''}</output></div><sl-range data-id="${c.id}" min="${c.min}" max="${c.max}" step="${c.step || 1}" value="${m.env[c.id]}"></sl-range></div>`;
+    if (c.type === 'toggle') return `<sl-switch data-id="${c.id}" ${m.env[c.id] ? 'checked' : ''}>${esc(c.label)}</sl-switch>`;
+    if (c.type === 'hold') return `<sl-button class="hold" data-id="${c.id}" variant="neutral" outline>${esc(c.label)}</sl-button>`;
+    if (c.type === 'select') return `<sl-radio-group data-id="${c.id}" label="${esc(c.label)}" value="${m.env[c.id]}" size="small">${c.options.map(([v, t]) => `<sl-radio-button value="${v}">${esc(t)}</sl-radio-button>`).join('')}</sl-radio-group>`;
+    if (c.type === 'encoder') return `<div class="btnrow"><sl-button size="small" data-enc="-1"><sl-icon slot="prefix" name="arrow-counterclockwise"></sl-icon>ทวนเข็ม</sl-button><sl-button size="small" data-enc="1"><sl-icon slot="prefix" name="arrow-clockwise"></sl-icon>ตามเข็ม</sl-button></div>`;
+    if (c.type === 'remote') return `<div class="remote">${IR_KEYS.map(([t, k]) => `<sl-button size="small" pill data-ir="${k}">${t}</sl-button>`).join('')}</div>`;
     return '';
   }).join('');
-  box.querySelectorAll('input[type=range]').forEach((el) => el.oninput = () => { const c = ctrls.find((x) => x.id === el.dataset.id); m.env[c.id] = +el.value; $('#o_' + c.id).textContent = el.value + (c.unit || ''); });
-  box.querySelectorAll('input[type=checkbox]').forEach((el) => el.onchange = () => { m.env[el.dataset.id] = el.checked; });
-  box.querySelectorAll('select').forEach((el) => el.onchange = () => { m.env[el.dataset.id] = el.value; });
-  box.querySelectorAll('button.hold').forEach((el) => {
-    el.onpointerdown = () => { m.env[el.dataset.id] = true; el.classList.add('on'); };
-    el.onpointerup = el.onpointerleave = () => { m.env[el.dataset.id] = false; el.classList.remove('on'); };
+  box.querySelectorAll('sl-range').forEach((el) => el.addEventListener('sl-input', () => { const c = ctrls.find((x) => x.id === el.dataset.id); m.env[c.id] = +el.value; $('#o_' + c.id).textContent = el.value + (c.unit || ''); }));
+  box.querySelectorAll('sl-switch').forEach((el) => el.addEventListener('sl-change', () => { m.env[el.dataset.id] = el.checked; }));
+  box.querySelectorAll('sl-radio-group').forEach((el) => el.addEventListener('sl-change', () => { m.env[el.dataset.id] = el.value; }));
+  box.querySelectorAll('sl-button.hold').forEach((el) => {
+    el.addEventListener('pointerdown', () => { m.env[el.dataset.id] = true; el.variant = 'success'; });
+    const up = () => { m.env[el.dataset.id] = false; el.variant = 'neutral'; };
+    el.addEventListener('pointerup', up); el.addEventListener('pointerleave', up);
   });
-  box.querySelectorAll('[data-enc]').forEach((el) => el.onclick = async () => {
-    for (let i = 0; i < 2; i++) { m.env.enc += +el.dataset.enc; await new Promise((r) => setTimeout(r, 25)); }
-  });
-  box.querySelectorAll('[data-ir]').forEach((el) => el.onclick = () => state.irQueue.push({ command: +el.dataset.ir, raw: +el.dataset.ir }));
+  box.querySelectorAll('[data-enc]').forEach((el) => el.addEventListener('click', async () => { for (let i = 0; i < 2; i++) { m.env.enc += +el.dataset.enc; await new Promise((r) => setTimeout(r, 25)); } }));
+  box.querySelectorAll('[data-ir]').forEach((el) => el.addEventListener('click', () => state.irQueue.push({ command: +el.dataset.ir, raw: +el.dataset.ir })));
 }
 
+function renderIssues(issues) {
+  const icon = { err: 'x-octagon', warn: 'exclamation-triangle', info: 'info-circle', ok: 'check2-circle' };
+  const list = issues.length ? issues : [['ok', 'การต่อสายถูกต้อง']];
+  $('#issues').innerHTML = list.map(([k, t]) => `<li class="${k}"><sl-icon name="${icon[k]}"></sl-icon>${esc(t)}</li>`).join('');
+  const n = issues.filter(([k]) => k === 'err' || k === 'warn').length;
+  const b = $('#issueCount');
+  if (b) { b.textContent = n; b.hidden = !n; }
+}
+
+function showTab(name) { $('#rightTabs')?.show?.(name); }
+
 $('#library').addEventListener('click', (e) => { const b = e.target.closest('.card'); if (b) addModule(b.dataset.key); });
-$('#placed').addEventListener('click', (e) => { const li = e.target.closest('li[data-id]'); if (li) select(state.modules.find((m) => m.id === +li.dataset.id)); });
-$('#search').oninput = renderLibrary;
-$('#libCat').onchange = renderLibrary;
-document.querySelectorAll('[data-view]').forEach((b) => b.onclick = () => stage.view(b.dataset.view));
+$('#placed').addEventListener('click', (e) => { const t = e.target.closest('sl-tag'); if (t) select(state.modules.find((m) => m.id === +t.dataset.id)); });
+$('#placed').addEventListener('sl-remove', (e) => { const m = state.modules.find((x) => x.id === +e.target.dataset.id); if (m) removeModule(m); });
+$('#search').addEventListener('sl-input', renderLibrary);
+$('#libCat').addEventListener('sl-change', renderLibrary);
+document.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => stage.view(b.dataset.view)));
+$('#pwUsb').addEventListener('sl-change', (e) => setPower({ usb: e.target.checked }));
+$('#pwBat').addEventListener('sl-change', (e) => setPower({ battery: e.target.checked }));
+$('#pwSw').addEventListener('sl-change', (e) => setPower({ sw: e.target.checked }));
 
 // ------------------------------------------------------------------ code editor + run
 let editor;
@@ -705,43 +830,59 @@ function initEditor() {
     editor = window.CodeMirror.fromTextArea($('#code'), { mode: 'text/x-c++src', theme: 'material-darker', lineNumbers: true, indentUnit: 2, tabSize: 2, matchBrackets: true });
     editor.on('change', () => saveSoon());
   }
-  $('#exBoard').innerHTML = BOARD_EXAMPLES.map((e, i) => `<option value="${i}">${e.title}</option>`).join('');
-  $('#btnBoardEx').onclick = () => setCode(BOARD_EXAMPLES[+$('#exBoard').value].code);
+  $('#exBoard').innerHTML = BOARD_EXAMPLES.map((e, i) => `<sl-option value="${i}">${esc(e.title)}</sl-option>`).join('');
+  $('#btnBoardEx').addEventListener('click', () => setCode(BOARD_EXAMPLES[+$('#exBoard').value || 0].code));
+}
+
+async function startSketch(code) {
+  if (state.running) state.running.stop();
+  mcu.running = false;
+  for (const k of Object.keys(voices)) sound(k, 0);
+  $('#errors').hidden = true;
+  try {
+    state.running = await runSketch(code, hw, mcu);
+    setRunUi(true);
+  } catch (e) { showError(e); setRunUi(false); }
 }
 
 async function runCode() {
-  stopSketch();
-  $('#errors').hidden = true;
-  serialClear();
   audio?.resume?.();
-  try {
-    state.running = await runSketch(getCode(), hw, mcu);
-    $('#btnRun').classList.add('running');
-    $('#runState').textContent = 'กำลังทำงาน';
-  } catch (e) { showError(e); }
+  if (!boardOn()) { toast('บอร์ดยังไม่มีไฟ: เปิด USB หรือ ต่อแบตเตอรี่ + สวิตช์ ON ที่แถบด้านบน', 'warning'); return; }
+  serialClear();
+  state.uploaded = getCode();
+  editor?.refresh();
+  await startSketch(state.uploaded);
 }
 
-function stopSketch() {
+function haltSketch() {
   if (state.running) state.running.stop();
   state.running = null;
   mcu.running = false;
   for (const k of Object.keys(voices)) sound(k, 0);
   oled.on = false; oled.flush(true);
   if (state.parts?.nanoL) state.parts.nanoL.material.emissiveIntensity = 0;
-  $('#btnRun').classList.remove('running');
-  $('#runState').textContent = 'หยุด';
+  setRunUi(false);
+}
+
+function stopSketch() { state.uploaded = null; haltSketch(); }
+
+function setRunUi(running) {
+  const b = $('#btnRun');
+  b.variant = running ? 'danger' : 'success';
+  b.innerHTML = running ? '<sl-icon slot="prefix" name="stop-fill"></sl-icon>หยุด' : '<sl-icon slot="prefix" name="play-fill"></sl-icon>รัน';
+  b.classList.toggle('running', running);
 }
 
 function showError(e) {
   const box = $('#errors');
   box.hidden = false;
   const msg = e instanceof TranspileError ? `แปลงโค้ดไม่สำเร็จ: ${e.message}` : `เกิดข้อผิดพลาดขณะรัน: ${e.message}`;
-  box.textContent = msg + '\n\nหมายเหตุ: ตัวจำลองรองรับภาษา Arduino ส่วนที่ใช้บ่อย (ตัวแปร ฟังก์ชัน อาร์เรย์ if/for/while/switch Serial Servo OLED DHT DS18B20 IRremote)';
+  box.querySelector('.msg').textContent = msg;
+  showTab('code');
   console.error(e);
 }
 
-$('#btnRun').onclick = runCode;
-$('#btnStop').onclick = stopSketch;
+$('#btnRun').addEventListener('click', () => (mcu.running ? stopSketch() : runCode()));
 
 // ------------------------------------------------------------------ serial monitor + plotter
 const serialEl = $('#serial');
@@ -761,24 +902,20 @@ function serialWrite(s) {
     if (nums.length) { plot.data.push(nums.slice(0, 4)); if (plot.data.length > plot.max) plot.data.shift(); }
   }
 }
-$('#serialSend').onsubmit = (e) => { e.preventDefault(); mcu.serialIn += $('#serialIn').value + '\n'; $('#serialIn').value = ''; };
-$('#btnClear').onclick = serialClear;
-document.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => {
-  document.querySelectorAll('[data-tab]').forEach((x) => x.classList.toggle('on', x === b));
-  document.querySelectorAll('.tabpane').forEach((p) => (p.hidden = p.id !== b.dataset.tab));
-});
+$('#serialSend').addEventListener('submit', (e) => { e.preventDefault(); mcu.serialIn += $('#serialIn').value + '\n'; $('#serialIn').value = ''; });
+$('#btnClear').addEventListener('click', serialClear);
 const plotCanvas = $('#plotter');
-const PLOT_COLORS = ['#4fc3f7', '#ffb74d', '#81c784', '#f06292'];
+const PLOT_COLORS = ['#38bdf8', '#fbbf24', '#4ade80', '#f472b6'];
 setInterval(() => {
-  if (plotCanvas.offsetParent === null) return;
+  if (!plotCanvas.offsetParent) return;
   const g = plotCanvas.getContext('2d');
   const W = (plotCanvas.width = plotCanvas.clientWidth), H = (plotCanvas.height = plotCanvas.clientHeight);
-  g.fillStyle = '#101317'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#0b0e13'; g.fillRect(0, 0, W, H);
   if (!plot.data.length) return;
   let lo = Infinity, hi = -Infinity;
   for (const r of plot.data) for (const v of r) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
   if (hi === lo) { hi += 1; lo -= 1; }
-  g.strokeStyle = '#2a3038'; g.fillStyle = '#7d8794'; g.font = '11px monospace';
+  g.strokeStyle = '#1f2630'; g.fillStyle = '#7d8794'; g.font = '11px "JetBrains Mono", monospace';
   for (let k = 0; k <= 4; k++) { const y = 8 + ((H - 16) * k) / 4; g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); g.fillText((hi - ((hi - lo) * k) / 4).toFixed(1), 4, y - 2); }
   const n = plot.data[0].length;
   for (let s = 0; s < n; s++) {
@@ -790,16 +927,9 @@ setInterval(() => {
 
 // ------------------------------------------------------------------ status
 function updateStatus() {
-  const ml = motorText(mcu, 'L'), mr = motorText(mcu, 'R');
-  const sv = [10, 11, 12].map((p, i) => `SV${i + 1}: ${state.servo[p] != null ? state.servo[p] + '°' : '-'}`).join('  ');
-  $('#hwStatus').textContent = `มอเตอร์ซ้าย ${ml} · มอเตอร์ขวา ${mr} · ${sv} · Knob A7 = ${Math.round(state.knob * 1023)}`;
-}
-function motorText(m, side) {
-  if (!m.running) return '■';
-  const [i1, i2, pw] = side === 'L' ? [9, 4, 5] : [7, 8, 6];
-  const sp = m.pwm[pw] != null ? m.pwm[pw] : m.out[pw] ? 255 : 0;
-  if (!sp || m.out[i1] === m.out[i2]) return '■ หยุด';
-  return `${m.out[i1] ? '▲' : '▼'} ${sp}`;
+  const mt = (p) => { const s = motorSpeed(p); return !mcu.running ? '—' : !motorsOn() ? 'ไม่มีไฟแบต' : s === 0 ? 'หยุด' : `${s > 0 ? '▲' : '▼'} ${Math.round(Math.abs(s) * 255)}`; };
+  const sv = [10, 11, 12].map((p, i) => `SV${i + 1} ${state.servo[p] != null ? state.servo[p] + '°' : '—'}`).join(' · ');
+  $('#hwStatus').innerHTML = `<span><sl-icon name="lightning-charge"></sl-icon>${boardOn() ? (state.power.usb ? 'USB 5V' : 'แบต 7.4V') : 'ไม่มีไฟ'}</span><span>ML ${mt('ML')}</span><span>MR ${mt('MR')}</span><span>${sv}</span><span>A7 ${Math.round(state.knob * 1023)}</span><span>D2 ${state.d2Pressed ? 'กด' : 'ปล่อย'}</span>`;
 }
 
 // ------------------------------------------------------------------ persistence
@@ -807,59 +937,67 @@ let saveT;
 function saveSoon() { clearTimeout(saveT); saveT = setTimeout(save, 400); }
 function save() {
   try {
-    const data = {
+    localStorage.setItem('lotus-sim', JSON.stringify({
       code: getCode(),
-      modules: state.modules.map((m) => ({ id: m.id, key: m.key, x: m.root.position.x, z: m.root.position.z, ry: m.root.rotation.y })),
+      power: state.power,
+      modules: state.modules.map((m) => ({ id: m.id, key: m.key, x: m.root.position.x, z: m.root.position.z, ry: m.root.rotation.y, portMap: m.portMap })),
       wires: state.wires.map((w) => ({ m: w.a.moduleId, pin: w.a.pin, port: w.b.port, row: w.b.row, color: w.color })),
-    };
-    localStorage.setItem('lotus-sim', JSON.stringify(data));
+    }));
   } catch {}
 }
 async function restore() {
   let data = null;
   try { data = JSON.parse(localStorage.getItem('lotus-sim') || 'null'); } catch {}
   if (!data) { setCode(BOARD_EXAMPLES[0].code); return; }
+  if (data.power) { Object.assign(state.power, data.power); applyPower(true); }
   setCode(data.code || BOARD_EXAMPLES[0].code);
   const idMap = {};
   for (const s of data.modules || []) {
+    if (!CATALOG.find((c) => c.key === s.key)) continue;
     const m = await addModule(s.key, { x: s.x, z: s.z }, { auto: false });
     m.root.rotation.y = s.ry || 0;
+    m.portMap = s.portMap || {};
     idMap[s.id] = m;
   }
   for (const w of data.wires || []) {
     const m = idMap[w.m];
     const port = state.ports.find((p) => p.port === w.port && p.row === w.row);
     if (!m || !m.pins[w.pin] || !port) continue;
-    addWire({ kind: 'pin', obj: m.pins[w.pin], pin: w.pin, moduleId: m.id }, { kind: 'port', obj: port.obj, port: port.port, row: port.row }, w.color);
+    addWire({ kind: 'pin', obj: m.pins[w.pin], pin: w.pin, moduleId: m.id }, { kind: 'port', obj: port.obj, port: port.port, row: port.row }, w.color, { quiet: true });
   }
+  select(null);
 }
-$('#btnReset').onclick = () => {
+$('#btnReset').addEventListener('click', () => {
   for (const m of [...state.modules]) removeModule(m);
   stopSketch();
   setCode(BOARD_EXAMPLES[0].code);
-};
+});
 
-// ------------------------------------------------------------------ misc
-let toastT;
-function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => (t.hidden = true), 2600); }
+// ------------------------------------------------------------------ toasts (Shoelace alerts)
+function toast(msg, variant = 'neutral') {
+  const icon = { primary: 'info-circle', success: 'check2-circle', warning: 'exclamation-triangle', danger: 'x-octagon', neutral: 'chat-left-text' }[variant];
+  document.querySelectorAll('.sl-toast-stack sl-alert').forEach((old) => old.hide?.());
+  const el = Object.assign(document.createElement('sl-alert'), { variant, closable: true, duration: 3200, innerHTML: `<sl-icon slot="icon" name="${icon}"></sl-icon>${esc(msg)}` });
+  document.body.append(el);
+  if (el.toast) el.toast(); else setTimeout(() => el.remove(), 3200);
+}
 
-window.__sim = { state, stage, mcu, oled, addModule, autoWire, runCode: () => runCode(), setCode };
+window.__sim = { state, stage, mcu, oled, addModule, autoWire, runCode: () => runCode(), stop: () => stopSketch(), setCode, setPower };
 
 (async function main() {
-  console.info('[sim] init');
+  await Promise.race([customElements.whenDefined('sl-button'), new Promise((r) => setTimeout(r, 3000))]);
   initEditor();
   renderLibrary();
   renderModuleList();
   select(null);
+  setRunUi(false);
   try {
     await loadBoard();
-    console.info('[sim] board loaded');
     await restore();
-    console.info('[sim] restored');
     checkWiring();
     $('#loading').hidden = true;
   } catch (e) {
-    $('#loading').textContent = 'โหลดโมเดล 3D ไม่สำเร็จ: ' + e.message + ' (ต้องเปิดผ่านเว็บเซิร์ฟเวอร์ เช่น GitHub Pages หรือ python -m http.server)';
+    $('#loading').textContent = 'โหลดโมเดล 3D ไม่สำเร็จ: ' + e.message + ' (ต้องเปิดผ่านเว็บเซิร์ฟเวอร์: python tools/serve.py)';
     console.error(e);
   }
 })();

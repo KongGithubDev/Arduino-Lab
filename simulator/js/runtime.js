@@ -227,9 +227,12 @@ export class MCU {
 }
 
 export function makeApi(mcu, hw) {
+  const gen = (mcu.gen = (mcu.gen || 0) + 1); // each run gets its own generation; older runs stop themselves
+  const alive = () => mcu.running && mcu.gen === gen;
   const HIGH = 1, LOW = 0;
   const pinNum = (p) => (typeof p === 'string' && p in PIN ? PIN[p] : +p);
   const api = {
+    __gen: gen,
     HIGH, LOW, INPUT: 'INPUT', OUTPUT: 'OUTPUT', INPUT_PULLUP: 'INPUT_PULLUP',
     CHANGE: 'CHANGE', RISING: 'RISING', FALLING: 'FALLING',
     LED_BUILTIN: 13, true: true, false: false, HEX: 16, DEC: 10, BIN: 2, OCT: 8,
@@ -240,7 +243,7 @@ export function makeApi(mcu, hw) {
     __int: (v) => (typeof v === 'number' && isFinite(v) ? Math.trunc(v) : v),
     __arr: (n) => new Array(Math.max(0, n | 0)).fill(0),
     async __yield() {
-      if (!mcu.running) throw new StopSignal();
+      if (!alive()) throw new StopSignal();
       const now = performance.now();
       if (now - (mcu.lastYield || 0) > 12) { mcu.lastYield = now; await new Promise((r) => setTimeout(r, 0)); await hw.pollInterrupts(); }
     },
@@ -297,11 +300,11 @@ export function makeApi(mcu, hw) {
     millis: () => mcu.millis(),
     micros: () => Math.floor((performance.now() - mcu.t0) * 1000 * mcu.speed),
     async delay(ms) {
-      if (!mcu.running) throw new StopSignal();
+      if (!alive()) throw new StopSignal();
       const end = performance.now() + ms / mcu.speed;
       while (performance.now() < end) {
         await new Promise((r) => setTimeout(r, Math.min(25, end - performance.now())));
-        if (!mcu.running) throw new StopSignal();
+        if (!alive()) throw new StopSignal();
         await hw.pollInterrupts();
       }
     },
@@ -443,7 +446,7 @@ export async function runSketch(code, hw, mcu) {
     const prog = await factory(api);
     if (prog.setup) await prog.setup();
     let last = performance.now();
-    while (mcu.running) {
+    while (mcu.running && mcu.gen === api.__gen) {
       if (prog.loop) await prog.loop();
       else await api.delay(50);
       await hw.pollInterrupts();
@@ -454,9 +457,9 @@ export async function runSketch(code, hw, mcu) {
     }
   })();
   main.catch((e) => {
-    if (e instanceof StopSignal) return;
+    if (e instanceof StopSignal || mcu.gen !== api.__gen) return;
     mcu.running = false;
     hw.error(e);
   });
-  return { stop() { mcu.running = false; }, js };
+  return { stop() { if (mcu.gen === api.__gen) mcu.running = false; }, js };
 }
