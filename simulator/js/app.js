@@ -267,11 +267,21 @@ function wireColor(pin, port) {
   return SIGNAL_COLORS[used % SIGNAL_COLORS.length];
 }
 
+/** The wire (and which end) already plugged into a pin or slot, if any. */
+function wireOn(an) {
+  for (const w of state.wires) {
+    if (an.kind === 'port' && w.b.port === an.port && w.b.row === an.row) return { wire: w, end: 'b' };
+    if (an.kind === 'pin' && w.a.moduleId === an.moduleId && w.a.pin === an.pin) return { wire: w, end: 'a' };
+  }
+  return null;
+}
+
 function addWire(a, b, color, { quiet = false } = {}) {
   if (a.kind === b.kind) { toast('สายต้องต่อจาก "ขาโมดูล" ไป "หัวต่อบนบอร์ด" (ปลายหนึ่งที่โมดูล อีกปลายที่บอร์ด)', 'warning'); return null; }
   const pin = a.kind === 'pin' ? a : b, port = a.kind === 'port' ? a : b;
-  const dup = state.wires.find((w) => w.a.moduleId === pin.moduleId && w.a.pin === pin.pin && w.b.port === port.port && w.b.row === port.row);
-  if (dup) { if (!quiet) toast('มีสายเส้นนี้อยู่แล้ว'); return null; }
+  // one Dupont per pin and per header slot, like the real hardware
+  if (wireOn(port)) { if (!quiet) toast(`${port.port} ${ROW_TH[port.row]} มีสายเสียบอยู่แล้ว: ถอดสายเดิมออกก่อน (ลากหรือแตะหัวสายดำ)`, 'warning'); return null; }
+  if (wireOn(pin)) { if (!quiet) toast(`ขา ${pin.pin} มีสายเสียบอยู่แล้ว: ถอดสายเดิมออกก่อน`, 'warning'); return null; }
   const w = new Wire(stage, pin, port, color || wireColor(pin, port));
   state.wires.push(w);
   restack();
@@ -405,7 +415,11 @@ function autoWire(m, { quiet = false } = {}) {
     }
     if (!pin) continue;
     const row = w.role === 'M' ? 'JST' : w.role;
-    const port = state.ports.find((p) => p.port === w.port && p.row === row);
+    let port = state.ports.find((p) => p.port === w.port && p.row === row);
+    if (port && wireOn({ kind: 'port', port: port.port, row }) && (row === '5V' || row === 'GND')) {
+      // planned power slot already used: take 5V/GND from the nearest free header column
+      port = SIGNAL_PORT_ORDER.map((c) => state.ports.find((p) => p.port === c && p.row === row)).find((p) => p && !wireOn({ kind: 'port', port: p.port, row }));
+    }
     if (!port) continue;
     used.add(pin);
     if (addWire({ kind: 'pin', obj: m.pins[pin], pin, moduleId: m.id }, { kind: 'port', obj: port.obj, port: port.port, row: port.row }, null, { quiet: true })) n++;
@@ -634,16 +648,21 @@ function showTargets(on) {
   const want = state.pending ? (state.pending.kind === 'pin' ? 'port' : 'pin') : null;
   for (const h of anchorsList()) {
     const an = h.userData.anchor;
-    h.material.opacity = on && an.kind === want ? 0.55 : 0;
+    h.material.opacity = on && an.kind === want && !wireOn(an) ? 0.55 : 0; // occupied places stay dark
   }
 }
 
-function setPending(an, color = null) {
+function setPending(an, color = null, lifted = null) {
   state.pending = an;
+  state.lifted = lifted; // the end that was unplugged (when moving an existing wire)
   state.pendingColor = color;
   showTargets(!!an);
   const bar = $('#wireHint');
-  if (an) {
+  if (an && lifted) {
+    bar.querySelector('.txt').textContent = `กำลังย้ายสาย: แตะรูใหม่ที่จะเสียบ (ช่องบนบอร์ด หรือขาโมดูล ที่ว่างอยู่)`;
+    bar.hidden = false;
+    for (const h of anchorsList()) { const a2 = h.userData.anchor; h.material.opacity = a2 !== an && !wireOn(a2) ? 0.55 : 0; }
+  } else if (an) {
     bar.querySelector('.txt').textContent = an.kind === 'pin'
       ? `ถือสายจากขา ${an.pin} อยู่: แตะ/คลิกช่องบนหัวต่อที่จะเสียบ (ขาว = S, แดง = 5V, ดำ = GND)`
       : `ถือสายจาก ${an.port} ${ROW_TH[an.row]} อยู่: แตะ/คลิกขาของโมดูลที่จะเสียบ`;
@@ -654,13 +673,33 @@ function setPending(an, color = null) {
   }
 }
 
+/** Cancel the wire in hand; a lifted (moved) wire goes back where it was. */
+function cancelPending() {
+  if (state.pending && state.lifted) {
+    addWire(state.lifted, state.pending, state.pendingColor, { quiet: true });
+    toast('ยกเลิกแล้ว: สายกลับไปเสียบที่เดิม');
+  }
+  setPending(null);
+}
+
 function finishWire(an) {
   if (!state.pending) return;
   if (an && an !== state.pending) {
     if (an.kind === state.pending.kind) {
       // same kind: switch the start point instead of failing
-      setPending(an, state.pendingColor);
+      if (state.lifted && !wireOn(an)) {
+        // moving an existing wire: the user tapped a new hole of the same kind as the end that stayed,
+        // so move that end instead -> reconnect the lifted end to the new hole
+        if (addWire(state.lifted, an, state.pendingColor)) toast(`ย้ายสายไป ${an.kind === 'port' ? an.port + ' ' + ROW_TH[an.row] : 'ขา ' + an.pin} แล้ว`, 'success');
+        setPending(null);
+        return;
+      }
+      if (!wireOn(an)) setPending(an, state.pendingColor);
       return;
+    }
+    if (wireOn(an)) {
+      toast(an.kind === 'port' ? `${an.port} ${ROW_TH[an.row]} มีสายเสียบอยู่แล้ว: เลือกช่องที่ว่าง` : `ขา ${an.pin} มีสายอยู่แล้ว: เลือกขาที่ว่าง`, 'warning');
+      return; // keep holding the wire
     }
     if (addWire(state.pending, an, state.pendingColor)) toast('ต่อสายแล้ว', 'success');
   }
@@ -703,9 +742,10 @@ canvas.addEventListener('pointermove', (e) => {
       // pulling a Dupont housing off its pin: unplug that end and carry it
       const { wire, end } = press.plug;
       const keep = end === 'a' ? wire.b : wire.a;
+      const lifted = end === 'a' ? wire.a : wire.b;
       const color = wire.color;
       removeWire(wire);
-      setPending(keep, color);
+      setPending(keep, color, lifted);
       stage.controls.enabled = false;
     }
   }
@@ -756,6 +796,14 @@ canvas.addEventListener('pointerdown', (e) => {
   // 1) a pin / slot (highest priority: always lets you start or finish a wire)
   const an = anchorAt(e);
   if (an) {
+    const plugged = wireOn(an);
+    if (!state.pending && plugged) {
+      // an occupied pin/slot behaves like its Dupont housing: tap = unplug & move, drag = move
+      press.kind = 'housing';
+      press.plug = plugged;
+      lockOrbit();
+      return;
+    }
     press.kind = 'anchor';
     press.anchor = an;
     if (state.pending) finishWire(an);
@@ -810,9 +858,14 @@ canvas.addEventListener('pointerup', (e) => {
       const an = anchorAt(e);
       if (an && an !== state.pending) finishWire(an);
     } else if (!p.dragging) {
-      // simple tap on a housing: start an extra wire from that pin / slot
+      // tap on a plugged housing: unplug that end and carry it to a new place
       const { wire, end } = p.plug;
-      setPending(end === 'a' ? wire.a : wire.b);
+      const keep = end === 'a' ? wire.b : wire.a;
+      const lifted = end === 'a' ? wire.a : wire.b;
+      const color = wire.color;
+      removeWire(wire);
+      setPending(keep, color, lifted);
+      toast('ยกสายขึ้นแล้ว: แตะรูใหม่ที่จะย้ายไปเสียบ (บนบอร์ดหรือขาโมดูลก็ได้) · ยกเลิก = คืนที่เดิม');
     }
   }
 });
@@ -835,7 +888,7 @@ function selectWire(w) {
 window.addEventListener('pointermove', (e) => { if (state.knobDrag) state.knob = Math.min(1, Math.max(0, state.knobDrag.k + (e.clientX - state.knobDrag.x) / 300)); });
 window.addEventListener('pointerup', () => { if (drag) save(); drag = null; state.d2Pressed = false; state.knobDrag = null; stage.controls.enabled = true; });
 $('#btnDelWire').addEventListener('click', () => { if (state.selWire) { removeWire(state.selWire); selectWire(null); toast('ลบสายแล้ว'); } });
-$('#btnCancelWire').addEventListener('click', () => setPending(null));
+$('#btnCancelWire').addEventListener('click', cancelPending);
 canvas.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   const wh = stage.pick(e, state.wires.map((w) => w.mesh))[0];
@@ -846,7 +899,7 @@ window.addEventListener('keydown', (e) => {
   if ((e.key === 'Delete' || e.key === 'Backspace') && state.selWire) { removeWire(state.selWire); selectWire(null); }
   // e.code is the physical key, so R works with a Thai (or any) keyboard layout
   if (e.code === 'KeyR' && !e.ctrlKey && !e.metaKey && state.selected) rotateModule(state.selected);
-  if (e.key === 'Escape') setPending(null);
+  if (e.key === 'Escape') cancelPending();
 });
 
 // ------------------------------------------------------------------ keyboard camera: WASD move, Q/E down/up, arrows orbit, Shift = fast
