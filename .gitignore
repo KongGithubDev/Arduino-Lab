@@ -1,0 +1,3 @@
+# intermediate Blender renders (final images go to assets/diagrams)
+tools/blender/renders/
+__pycache__/

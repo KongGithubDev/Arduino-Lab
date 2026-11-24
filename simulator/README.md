@@ -1,0 +1,74 @@
+# Lotus Nano Bot Simulator (3D)
+
+เว็บจำลองบอร์ด **Lotus Nano Bot** + ชุดเซนเซอร์ **37-in-1** แบบ 3 มิติ ต่อสายและรันโค้ด Arduino ได้ในเบราว์เซอร์
+
+## เปิดใช้งาน
+
+เว็บต้องเปิดผ่านเว็บเซิร์ฟเวอร์ (เปิดไฟล์ตรงๆ แบบ `file://` จะโหลดโมเดล 3D ไม่ได้)
+
+```bash
+# จากโฟลเดอร์หลักของโปรเจกต์
+python -m http.server 8000
+# แล้วเปิด http://localhost:8000/simulator/
+```
+
+หรือเปิด GitHub Pages ของ repo (Settings → Pages → Branch `main` / root) แล้วเข้า `https://<user>.github.io/Arduino-Lab/simulator/`
+
+## วิธีใช้
+
+1. เลือกโมดูลจาก **คลังโมดูล** ด้านซ้าย โมดูลจะถูกวางบนโต๊ะ
+2. **ต่อสาย:** คลิกขาโมดูล แล้วคลิกหัวต่อบนบอร์ด
+   - ช่องขาว = สัญญาณ (S)
+   - ช่องแดง = 5V
+   - ช่องดำ = GND
+
+   ถ้าไม่อยากต่อเอง ให้กด **ต่อสายอัตโนมัติ** ระบบจะต่อตามตารางในเอกสารของโมดูลนั้น
+3. กด **โหลดโค้ด** เพื่อเอาโค้ดตัวอย่างจาก README หรือเขียนโค้ดเองในช่องโค้ด แล้วกด **▶ รัน**
+4. ปรับ **สภาพแวดล้อมจำลอง** ได้ เช่น ความสว่าง อุณหภูมิ แม่เหล็ก เสียง การกดปุ่ม และรีโมท IR แล้วดูผลใน Serial Monitor หรือ Serial Plotter
+5. อุปกรณ์บนบอร์ดใช้ได้จริง:
+   - ปุ่มฟ้า D2 (คลิกค้าง)
+   - Knob A7 (ลากซ้าย-ขวา)
+   - จอ OLED
+   - บัซเซอร์ D3
+   - LED L (D13)
+   - มอเตอร์ และเซอร์โว: ดูสถานะที่แถบล่าง
+
+ระบบตรวจการต่อสายจะเตือนเมื่อ:
+- ต่อกลับขั้ว
+- เสียบขาสัญญาณผิดช่อง
+- ใช้พอร์ตที่ชนกับอุปกรณ์บนบอร์ด (D3 บัซเซอร์, A4/A5 I2C, D0/D1 Serial)
+
+## ภาษา Arduino ที่รองรับ
+
+ตัวจำลองแปลงโค้ด Arduino (C++) เป็น JavaScript แล้วรันบน ATmega328P เสมือน ใช้ได้กับโค้ดเพื่อการเรียนรู้เกือบทั้งหมด
+
+| ส่วนที่รองรับ | รายการ |
+|-------------|--------|
+| ไวยากรณ์ | ตัวแปร, ฟังก์ชัน, อาร์เรย์, `#define`, `if`/`for`/`while`/`switch`, `String` |
+| ขาและเวลา | `pinMode`, `digitalRead/Write`, `analogRead/Write`, `tone`/`noTone`, `millis`/`delay`, `map`/`constrain`, `attachInterrupt` (D2/D3) |
+| สื่อสาร | `Serial` (print/println/read) |
+| ไลบรารี | `Servo`, `Adafruit_SSD1306` (ข้อความและรูปทรง), `DHT`, `OneWire` + `DallasTemperature`, `IRremote` 4.x |
+
+ข้อจำกัด:
+- ไม่รองรับ pointer, struct หรือ class ที่เขียนเอง
+- ไม่รองรับ register ระดับต่ำ (`PORTB`, `PCINT`)
+- จังหวะเวลาเป็นค่าประมาณ
+
+## โครงสร้าง
+
+| ไฟล์ | หน้าที่ |
+|-----|--------|
+| `index.html`, `css/style.css` | หน้าเว็บ |
+| `js/app.js` | ต่อสาย, วงจรไฟฟ้า, อุปกรณ์บนบอร์ด, เสียง, Serial |
+| `js/scene.js` | ฉาก three.js (แสง, เงา, Bloom), สาย Jumper |
+| `js/runtime.js` | ตัวแปลง Arduino → JS และ MCU เสมือน |
+| `js/behaviors.js` | พฤติกรรมไฟฟ้าของโมดูลทั้ง 37 ตัว |
+| `js/catalog.js` | ข้อมูลโมดูล + โค้ดตัวอย่าง (สร้างจาก README) |
+| `models/*.glb` | โมเดล 3D ส่งออกจาก Blender |
+
+### สร้างข้อมูล/โมเดลใหม่
+
+```bash
+python tools/build_simulator_data.py                       # catalog.js จาก README
+"C:/Program Files/Blender Foundation/Blender 4.5/blender.exe" -b --factory-startup --python tools/blender/export_glb.py
+```

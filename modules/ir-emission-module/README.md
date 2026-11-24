@@ -17,48 +17,33 @@ IR Emission Module เป็นโมดูลส่งสัญญาณอิ�
 |-------------|-------|------------------------------|
 | VCC (+)     | แดง   | 5V                           |
 | GND (-)     | ดำ/น้ำตาล | GND                       |
-| S (Signal)  | เหลือง | D3 (แนะนำ, รองรับ IRremote) หรือ A0-A3 |
+| S (Signal)  | ขาว   | A0 (D14) หรือ A1-A3         |
+
+> ต่อที่หัวต่อพอร์ต A0 บนบอร์ด: ช่องขาว = S, ช่องแดง = 5V, ช่องดำ = GND
 
 ## การต่อสายไฟ
 
 ```
 IR Emission Module       Lotus Nano Bot
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-VCC (+) ───────────────► 5V
-GND (-) ───────────────► GND
-S     ────────────────► D3
+VCC ──────────────────► 5V
+GND ──────────────────► GND
+S ──────────────────► A0 (D14)
 ```
 
-### ภาพการต่อสาย (Text Diagram)
+### ภาพการต่อสายกับบอร์ด
 
-```
-        +------------------+
-        |  IR Emission     |
-        |  Module          |
-        |    ◉ (IR LED)    |
-        |                  |
-   +----+----+   +----+----+   +----+----+
-   |  VCC    |   |  GND    |   |    S    |
-   |   (+)   |   |   (-)   |   | (Sig)   |
-   +----+----+   +----+----+   +----+----+
-        |             |             |
-        |             |             |
-   +----+----+   +----+----+   +----+----+
-   |   5V    |   |  GND    |   |   D3    |
-   |         |   |         |   |         |
-   |  Lotus  |   |  Nano   |   |  Bot    |
-   +---------+   +---------+   +---------+
-```
+![ภาพการต่อสายกับ Lotus Nano Bot](../../assets/diagrams/ir-emission-module-lotus.png)
+
 <img width="1026" height="567" alt="{E3EBA2B2-C833-4F71-9DAE-BFAA8F8B7266}" src="https://github.com/user-attachments/assets/795c5836-8b67-4b7e-90c4-8c385d104e0b" />
-
 
 ## โค้ดตัวอย่าง
 
 ```cpp
 // IR Emission Module Example for Lotus Nano Bot
-// S -> D3
+// S -> A0 (D14)
 
-#define IR_LED_PIN 3
+#define IR_LED_PIN 14  // A0
 
 void setup() {
   Serial.begin(9600);
@@ -87,12 +72,14 @@ void loop() {
 
 ```cpp
 // ใช้ IRremote เวอร์ชัน 4.x (ติดตั้งจาก Library Manager)
-#define IR_SEND_PIN 3  // ต้องกำหนดก่อน include (Nano ส่ง 38 kHz ด้วย Timer2 ที่ D3)
+// ค่าเริ่มต้นของ IRremote 4.x สร้างคลื่น 38 kHz ด้วยซอฟต์แวร์ จึงใช้ขาดิจิทัลใดก็ได้
 #include <IRremote.hpp>
+
+#define IR_LED_PIN 14  // A0
 
 void setup() {
   Serial.begin(9600);
-  IrSender.begin(IR_SEND_PIN);
+  IrSender.begin(IR_LED_PIN);
   Serial.println("IR Transmitter Ready");
 }
 
@@ -109,8 +96,8 @@ void loop() {
 - IR LED ส่งแสงที่มองไม่เห็น (Infrared)
 - ต้องส่งสัญญาณที่ความถี่ 38 kHz สำหรับรีโมททั่วไป
 - ใช้ IRremote library เพื่อความสะดวกในการส่งสัญญาณต่างๆ
-- บน Lotus Nano Bot ใช้ D3 (แนะนำ เพราะ IRremote บน Nano ส่งสัญญาณจาก Timer2 ที่ขา D3) หรือ A0-A3 สำหรับโค้ดแบบ bit-bang
-- ห้ามใช้ D2 (ปุ่ม OK), D5/D6/D9 (มอเตอร์) และ D10-D12 (เซอร์โว)
+- บน Lotus Nano Bot ใช้ A0-A3 ได้ทั้งโค้ดแบบ bit-bang และ IRremote 4.x (สร้างคลื่นพาห์ด้วยซอฟต์แวร์เป็นค่าเริ่มต้น)
+- ไม่ต่อที่ D3 เพราะต่อร่วมกับบัซเซอร์ในตัว (ถ้าเปิดโหมด `SEND_PWM_BY_TIMER` ของ IRremote จะบังคับใช้ D3 ซึ่งชนกับบัซเซอร์) และห้ามใช้ D4-D9 (มอเตอร์)
 
 ## กิจกรรมการเรียนรู้
 
@@ -120,7 +107,7 @@ void loop() {
 3. นักเรียนส่งรหัส NEC ด้วย IRremote และตรวจรับด้วย IR Receiver ได้
 
 ### ขั้นตอนการทดลอง
-1. ต่อสาย VCC→5V, GND→GND, S→D3 แล้วอัปโหลดโค้ดตัวอย่างแรก
+1. ต่อสาย VCC→5V, GND→GND, S→A0 แล้วอัปโหลดโค้ดตัวอย่างแรก
 2. ส่อง IR LED ผ่านกล้องมือถือ (กล้องหน้ามักเห็นได้ชัดกว่า) สังเกตแสงม่วงกะพริบ
 3. ติดตั้ง IRremote 4.x แล้วอัปโหลดโค้ดตัวอย่างที่สอง
 4. นำ IR Receiver (บอร์ดอีกชุด) มารับสัญญาณ บันทึกรหัสที่อ่านได้ที่ระยะ 10, 50, 100 cm

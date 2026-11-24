@@ -19,8 +19,10 @@ Analog Temperature Sensor เป็นโมดูลที่ใช้ Thermist
 |-------------|-------|------------------------------|
 | VCC         | แดง   | 5V                           |
 | GND         | ดำ/น้ำตาล | GND                       |
-| DO (Digital)| เหลือง | D3 หรือ A1 (D15)            |
-| AO (Analog) | ขาว   | A0, A2, A3 หรือ A6 (ห้ามซ้ำกับ DO) |
+| DO (Digital)| เหลือง | A1 (D15)                     |
+| AO (Analog) | ขาว   | A0                           |
+
+> ต่อที่หัวต่อพอร์ต A0 และ A1 บนบอร์ด: ช่องขาว = S (AO เข้า A0, DO เข้า A1), ช่องแดง = 5V, ช่องดำ = GND
 
 ## การต่อสายไฟ
 
@@ -29,30 +31,13 @@ Analog Temp Sensor       Lotus Nano Bot
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 VCC  ──────────────────► 5V
 GND  ──────────────────► GND
-DO   ──────────────────► D3 (optional)
+DO   ──────────────────► A1 (optional)
 AO   ──────────────────► A0
 ```
 
-### ภาพการต่อสาย (Text Diagram)
+### ภาพการต่อสายกับบอร์ด
 
-```
-        +------------------+
-        |  Analog Temp     |
-        |  Sensor          |
-        |  (Thermistor)    |
-        |                  |
-   +----+----+   +----+----+   +----+----+   +----+----+
-   |  VCC    |   |  GND    |   |  DO     |   |  AO     |
-   |   (+)   |   |   (-)   |   | (Digi)  |   | (Anlg)  |
-   +----+----+   +----+----+   +----+----+   +----+----+
-        |             |             |             |
-        |             |             |             |
-   +----+----+   +----+----+   +----+----+   +----+----+
-   |   5V    |   |  GND    |   |   D3    |   |   A0    |
-   |         |   |         |   |         |   |         |
-   |  Lotus  |   |  Nano   |   |  Bot    |   |         |
-   +---------+   +---------+   +---------+   +---------+
-```
+![ภาพการต่อสายกับ Lotus Nano Bot](../../assets/diagrams/analog-temperature-sensor-lotus.png)
 
 ## โค้ดตัวอย่าง
 
@@ -84,9 +69,8 @@ void loop() {
   }
   float voltage = rawValue * (5.0 / 1023.0);
   float resistance = 10000.0 * (1023.0 / rawValue - 1.0);
-  float temperature = resistance / 10000.0;
-  temperature = log(temperature);
-  temperature = 1.0 / (0.001129148 + (0.000234125 * temperature) + (0.0000000876741 * temperature * temperature * temperature));
+  float logR = log(resistance);  // Steinhart-Hart ใช้ ln(R) ของค่าความต้านทานจริง (โอห์ม)
+  float temperature = 1.0 / (0.001129148 + (0.000234125 * logR) + (0.0000000876741 * logR * logR * logR));
   temperature = temperature - 273.15;  // Kelvin to Celsius
   
   Serial.print("Raw: ");
@@ -177,7 +161,7 @@ void loop() {
 </details>
 
 ### ภารกิจท้าทาย
-- ใช้ Knob A7 ตั้งค่าอุณหภูมิเตือน (เช่น 25-40°C) แสดงอุณหภูมิปัจจุบันและค่าที่ตั้งบนจอ OLED และให้บัซเซอร์ D3 ดังเมื่ออุณหภูมิเกินค่าที่ตั้ง (ไม่ต่อ DO ที่ D3 ในกรณีนี้)
+- ใช้ Knob A7 ตั้งค่าอุณหภูมิเตือน (เช่น 25-40°C) แสดงอุณหภูมิปัจจุบันและค่าที่ตั้งบนจอ OLED และให้บัซเซอร์ D3 ดังเมื่ออุณหภูมิเกินค่าที่ตั้ง
 
 ## รูปภาพ
 

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lotus Nano Bot Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
+<link rel="stylesheet" href="css/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo">◎</span> Lotus Nano Bot <b>Simulator</b></div>
+  <div class="views">
+    <span class="muted">มุมมอง</span>
+    <button data-view="angle">เฉียง</button>
+    <button data-view="top">ด้านบน</button>
+    <button data-view="front">ด้านหน้า</button>
+    <button data-view="board">ซูมบอร์ด</button>
+  </div>
+  <div class="runbar">
+    <button id="btnRun" class="primary">▶ รัน</button>
+    <button id="btnStop">■ หยุด</button>
+    <span id="runState" class="muted">หยุด</span>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="left">
+    <h3>คลังโมดูล (37 ชิ้น)</h3>
+    <div class="row">
+      <input id="search" type="search" placeholder="ค้นหา เช่น KY-018, แสง, LED">
+      <select id="libCat"><option value="all">ทั้งหมด</option><option value="sensor">เซนเซอร์</option><option value="module">โมดูล</option></select>
+    </div>
+    <div id="library" class="library"></div>
+    <h3>บนโต๊ะ</h3>
+    <ul id="placed" class="placed"></ul>
+    <button id="btnReset" class="ghost danger small">ล้างโต๊ะทั้งหมด</button>
+  </aside>
+
+  <section class="center">
+    <div id="viewport" class="viewport">
+      <div id="loading" class="loading">กำลังโหลดโมเดล 3D…</div>
+      <div class="help">
+        <b>วิธีใช้</b> คลิกโมดูลในคลังเพื่อวางบนโต๊ะ → คลิก <i>ขาโมดูล</i> แล้วคลิก <i>หัวต่อบนบอร์ด</i> (ช่องขาว S / แดง 5V / ดำ GND) เพื่อต่อสาย ·
+        ลากโมดูลเพื่อย้าย · <kbd>R</kbd> หมุน · คลิกขวาที่สายเพื่อลบ · คลิกปุ่มฟ้า D2 / ลาก Knob A7 บนบอร์ดได้
+      </div>
+      <label class="ircam"><input type="checkbox" id="irCam"> มองแสง IR (กล้องมือถือ)</label>
+    </div>
+    <div class="statusbar"><span id="hwStatus"></span></div>
+    <ul id="issues" class="issues"></ul>
+  </section>
+
+  <aside class="right">
+    <div id="modulePanel" class="panel"></div>
+    <div class="panel code">
+      <div class="row between">
+        <h3>โค้ด Arduino</h3>
+        <div class="row"><select id="exBoard"></select><button id="btnBoardEx">โหลด</button></div>
+      </div>
+      <textarea id="code" spellcheck="false"></textarea>
+      <pre id="errors" class="errors" hidden></pre>
+    </div>
+    <div class="panel monitor">
+      <div class="tabs">
+        <button data-tab="tabSerial" class="on">Serial Monitor</button>
+        <button data-tab="tabPlot">Serial Plotter</button>
+        <label class="small"><input type="checkbox" id="autoscroll" checked> เลื่อนอัตโนมัติ</label>
+        <button id="btnClear" class="ghost small">ล้าง</button>
+      </div>
+      <div id="tabSerial" class="tabpane">
+        <pre id="serial" class="serial"></pre>
+        <form id="serialSend" class="row"><input id="serialIn" placeholder="พิมพ์ข้อความส่งไปยังบอร์ด"><button>ส่ง</button></form>
+      </div>
+      <div id="tabPlot" class="tabpane" hidden><canvas id="plotter" class="plotter"></canvas></div>
+    </div>
+  </aside>
+</main>
+<div id="tip" class="tip" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

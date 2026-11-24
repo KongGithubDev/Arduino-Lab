@@ -1,0 +1,1023 @@
+[
+ {
+  "key": "analog-hall-sensor",
+  "code": "KY-035",
+  "name": "Analog Hall Sensor",
+  "wires": [
+   {
+    "pin": "VCC",
+    "port": "A0",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "GND",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   },
+   {
+    "pin": "DO",
+    "port": "A1",
+    "role": "S",
+    "optional": true
+   },
+   {
+    "pin": "AO",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "analog-temperature-sensor",
+  "code": "KY-013",
+  "name": "Analog Temperature Sensor",
+  "wires": [
+   {
+    "pin": "VCC",
+    "port": "A0",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "GND",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   },
+   {
+    "pin": "DO",
+    "port": "A1",
+    "role": "S",
+    "optional": true
+   },
+   {
+    "pin": "AO",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "avoidance-sensor",
+  "code": "KY-032",
+  "name": "Obstacle Avoidance Sensor",
+  "wires": [
+   {
+    "pin": "VCC",
+    "port": "A0",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "GND",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   },
+   {
+    "pin": "OUT",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "big-sound-sensor",
+  "code": "KY-037",
+  "name": "Big Sound Sensor",
+  "wires": [
+   {
+    "pin": "VCC",
+    "port": "A1",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "GND",
+    "port": "A1",
+    "role": "GND",
+    "optional": false
+   },
+   {
+    "pin": "DO",
+    "port": "A1",
+    "role": "S",
+    "optional": false
+   },
+   {
+    "pin": "AO",
+    "port": "A0",
+    "role": "S",
+    "optional": true
+   }
+  ]
+ },
+ {
+  "key": "digital-temperature-sensor",
+  "code": "KY-028",
+  "name": "Digital Temperature Sensor",
+  "wires": [
+   {
+    "pin": "VCC",
+    "port": "A0",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "GND",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   },
+   {
+    "pin": "DO",
+    "port": "A1",
+    "role": "S",
+    "optional": true
+   },
+   {
+    "pin": "AO",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "ds18b20-temperature-sensor",
+  "code": "KY-001",
+  "name": "DS18B20 Temperature Sensor",
+  "wires": [
+   {
+    "pin": "VDD",
+    "port": "A0",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "GND",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   },
+   {
+    "pin": "DQ",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "flame-sensor",
+  "code": "KY-026",
+  "name": "Flame Sensor",
+  "wires": [
+   {
+    "pin": "VCC",
+    "port": "A1",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "GND",
+    "port": "A1",
+    "role": "GND",
+    "optional": false
+   },
+   {
+    "pin": "DO",
+    "port": "A1",
+    "role": "S",
+    "optional": false
+   },
+   {
+    "pin": "AO",
+    "port": "A0",
+    "role": "S",
+    "optional": true
+   }
+  ]
+ },
+ {
+  "key": "hall-magnetic-sensor",
+  "code": "KY-003",
+  "name": "Hall Magnetic Sensor",
+  "wires": [
+   {
+    "pin": "S",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   },
+   {
+    "pin": "+",
+    "port": "A0",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "-",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "heartbeat-sensor",
+  "code": "KY-039",
+  "name": "Heartbeat Sensor",
+  "wires": [
+   {
+    "pin": "VCC",
+    "port": "A0",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "GND",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   },
+   {
+    "pin": "S",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "ir-receiver",
+  "code": "KY-022",
+  "name": "IR Receiver Module",
+  "wires": [
+   {
+    "pin": "S",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   },
+   {
+    "pin": "+",
+    "port": "A0",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "-",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "light-blocking-sensor",
+  "code": "KY-010",
+  "name": "Light Blocking Sensor",
+  "wires": [
+   {
+    "pin": "S",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   },
+   {
+    "pin": "+",
+    "port": "A0",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "-",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "light-cup-module",
+  "code": "KY-027",
+  "name": "Magic Light Cup Module",
+  "wires": [
+   {
+    "pin": "G",
+    "port": "A1",
+    "role": "GND",
+    "optional": false
+   },
+   {
+    "pin": "+",
+    "port": "A1",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "S",
+    "port": "A1",
+    "role": "S",
+    "optional": false
+   },
+   {
+    "pin": "L",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "linear-hall-sensor",
+  "code": "KY-024",
+  "name": "Linear Hall Sensor",
+  "wires": [
+   {
+    "pin": "VCC",
+    "port": "A0",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "GND",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   },
+   {
+    "pin": "DO",
+    "port": "A1",
+    "role": "S",
+    "optional": true
+   },
+   {
+    "pin": "AO",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "magnetic-spring-sensor",
+  "code": "KY-021",
+  "name": "Mini Reed / Magnetic Spring Sensor",
+  "wires": [
+   {
+    "pin": "S",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   },
+   {
+    "pin": "+",
+    "port": "A0",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "-",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "mercury-switch",
+  "code": "KY-017",
+  "name": "Mercury Tilt Switch",
+  "wires": [
+   {
+    "pin": "S",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   },
+   {
+    "pin": "+",
+    "port": "A0",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "-",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "passive-buzzer",
+  "code": "KY-006",
+  "name": "Passive Buzzer",
+  "wires": [
+   {
+    "pin": "S",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   },
+   {
+    "pin": "-",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "photoresistor",
+  "code": "KY-018",
+  "name": "Photoresistor / LDR Sensor",
+  "wires": [
+   {
+    "pin": "VCC",
+    "port": "A0",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "GND",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   },
+   {
+    "pin": "DO",
+    "port": "A1",
+    "role": "S",
+    "optional": true
+   },
+   {
+    "pin": "AO",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "reed-switch",
+  "code": "KY-025",
+  "name": "Reed Switch",
+  "wires": [
+   {
+    "pin": "S",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   },
+   {
+    "pin": "+",
+    "port": "A0",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "-",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "rotary-encoder",
+  "code": "KY-040",
+  "name": "Rotary Encoder",
+  "wires": [
+   {
+    "pin": "CLK",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   },
+   {
+    "pin": "DT",
+    "port": "A1",
+    "role": "S",
+    "optional": false
+   },
+   {
+    "pin": "SW",
+    "port": "A2",
+    "role": "S",
+    "optional": false
+   },
+   {
+    "pin": "+",
+    "port": "A0",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "GND",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "small-sound-sensor",
+  "code": "KY-038",
+  "name": "Small Sound Sensor",
+  "wires": [
+   {
+    "pin": "VCC",
+    "port": "A1",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "GND",
+    "port": "A1",
+    "role": "GND",
+    "optional": false
+   },
+   {
+    "pin": "DO",
+    "port": "A1",
+    "role": "S",
+    "optional": false
+   },
+   {
+    "pin": "AO",
+    "port": "A0",
+    "role": "S",
+    "optional": true
+   }
+  ]
+ },
+ {
+  "key": "tap-module",
+  "code": "KY-031",
+  "name": "Tap Module",
+  "wires": [
+   {
+    "pin": "VCC",
+    "port": "A1",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "GND",
+    "port": "A1",
+    "role": "GND",
+    "optional": false
+   },
+   {
+    "pin": "DO",
+    "port": "A1",
+    "role": "S",
+    "optional": false
+   },
+   {
+    "pin": "AO",
+    "port": "A0",
+    "role": "S",
+    "optional": true
+   }
+  ]
+ },
+ {
+  "key": "temperature-humidity-sensor",
+  "code": "KY-015",
+  "name": "DHT11 Temperature & Humidity Sensor",
+  "wires": [
+   {
+    "pin": "S",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   },
+   {
+    "pin": "+",
+    "port": "A0",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "-",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "tilt-switch",
+  "code": "KY-020",
+  "name": "Ball Tilt Switch",
+  "wires": [
+   {
+    "pin": "S",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   },
+   {
+    "pin": "+",
+    "port": "A0",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "-",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "touch-sensor",
+  "code": "KY-036",
+  "name": "Touch Sensor",
+  "wires": [
+   {
+    "pin": "VCC",
+    "port": "A0",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "GND",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   },
+   {
+    "pin": "I/O",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "tracking-sensor",
+  "code": "KY-033",
+  "name": "Line Tracking Sensor",
+  "wires": [
+   {
+    "pin": "VCC",
+    "port": "A1",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "GND",
+    "port": "A1",
+    "role": "GND",
+    "optional": false
+   },
+   {
+    "pin": "DO",
+    "port": "A1",
+    "role": "S",
+    "optional": false
+   },
+   {
+    "pin": "AO",
+    "port": "A0",
+    "role": "S",
+    "optional": true
+   }
+  ]
+ },
+ {
+  "key": "vibration-sensor",
+  "code": "KY-002",
+  "name": "Shock / Vibration Sensor",
+  "wires": [
+   {
+    "pin": "VCC",
+    "port": "A0",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "GND",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   },
+   {
+    "pin": "DO",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "7-color-flash-led",
+  "code": "KY-034",
+  "name": "7 Color Flash LED",
+  "wires": [
+   {
+    "pin": "VCC",
+    "port": "A0",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "GND",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   },
+   {
+    "pin": "S",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "active-buzzer",
+  "code": "KY-012",
+  "name": "Active Buzzer",
+  "wires": [
+   {
+    "pin": "VCC",
+    "port": "A0",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "GND",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   },
+   {
+    "pin": "I/O",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "button-module",
+  "code": "KY-004",
+  "name": "Push Button Module",
+  "wires": [
+   {
+    "pin": "VCC",
+    "port": "A0",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "GND",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   },
+   {
+    "pin": "OUT",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "ir-emission-module",
+  "code": "KY-005",
+  "name": "IR Emitter Module",
+  "wires": [
+   {
+    "pin": "VCC",
+    "port": "A0",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "GND",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   },
+   {
+    "pin": "S",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "joystick-module",
+  "code": "KY-023",
+  "name": "Joystick Module",
+  "wires": [
+   {
+    "pin": "VCC",
+    "port": "A0",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "GND",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   },
+   {
+    "pin": "VRX",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   },
+   {
+    "pin": "VRY",
+    "port": "A1",
+    "role": "S",
+    "optional": false
+   },
+   {
+    "pin": "SW",
+    "port": "A2",
+    "role": "S",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "laser-module",
+  "code": "KY-008",
+  "name": "Laser Transmitter Module",
+  "wires": [
+   {
+    "pin": "VCC",
+    "port": "A0",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "GND",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   },
+   {
+    "pin": "S",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "mini-two-color-led",
+  "code": "KY-029",
+  "name": "Mini Two-color LED Module",
+  "wires": [
+   {
+    "pin": "-",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   },
+   {
+    "pin": "R",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   },
+   {
+    "pin": "G",
+    "port": "A1",
+    "role": "S",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "relay-module",
+  "code": "KY-019",
+  "name": "Relay Module",
+  "wires": [
+   {
+    "pin": "VCC",
+    "port": "A0",
+    "role": "5V",
+    "optional": false
+   },
+   {
+    "pin": "GND",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   },
+   {
+    "pin": "IN",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "rgb-led",
+  "code": "KY-016",
+  "name": "RGB LED Module",
+  "wires": [
+   {
+    "pin": "-",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   },
+   {
+    "pin": "R",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   },
+   {
+    "pin": "G",
+    "port": "A1",
+    "role": "S",
+    "optional": false
+   },
+   {
+    "pin": "B",
+    "port": "A2",
+    "role": "S",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "smd-rgb-led",
+  "code": "KY-009",
+  "name": "SMD RGB LED Module",
+  "wires": [
+   {
+    "pin": "-",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   },
+   {
+    "pin": "R",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   },
+   {
+    "pin": "G",
+    "port": "A1",
+    "role": "S",
+    "optional": false
+   },
+   {
+    "pin": "B",
+    "port": "A2",
+    "role": "S",
+    "optional": false
+   }
+  ]
+ },
+ {
+  "key": "two-color-led",
+  "code": "KY-011",
+  "name": "Two-color LED Module",
+  "wires": [
+   {
+    "pin": "-",
+    "port": "A0",
+    "role": "GND",
+    "optional": false
+   },
+   {
+    "pin": "R",
+    "port": "A0",
+    "role": "S",
+    "optional": false
+   },
+   {
+    "pin": "G",
+    "port": "A1",
+    "role": "S",
+    "optional": false
+   }
+  ]
+ }
+]

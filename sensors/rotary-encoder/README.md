@@ -15,54 +15,41 @@ Rotary Encoder หรือ Encoder หมุน เป็นอุปกรณ�
 
 | ขา (Encoder) | สีสาย | เชื่อมต่อกับ (Lotus Nano Bot) |
 |--------------|-------|------------------------------|
-| CLK (A)      | -     | D3                           |
-| DT (B)       | -     | A0 (D14)                     |
-| SW (Button)  | -     | A1 (D15)                     |
-| VCC (+)      | -     | 5V                           |
+| CLK (A)      | -     | A0 (D14)                     |
+| DT (B)       | -     | A1 (D15)                     |
+| SW (Button)  | -     | A2 (D16)                     |
+| + (VCC)      | -     | 5V                           |
 | GND (-)      | -     | GND                          |
 
-> **หมายเหตุ:** บน Lotus Nano Bot พอร์ต Digital ภายนอกมี D0, D1, D3 โดย D0/D1 ใช้กับ Bluetooth/Serial ส่วน D3 ใช้กับบัซเซอร์บนบอร์ด หากต้องการพอร์ต Digital เพิ่มสามารถใช้ A0-A3 เป็น Digital ได้ (A0=Pin14, A1=Pin15, A2=Pin16, A3=Pin17)
+> ต่อที่หัวต่อพอร์ต A0, A1 และ A2 บนบอร์ด: ช่องขาว = S (CLK เข้า A0, DT เข้า A1, SW เข้า A2), ช่องแดง = 5V, ช่องดำ = GND (ใช้ + และ GND จากพอร์ตใดพอร์ตหนึ่ง)
+>
+> **หมายเหตุ:** ขา A0-A3 ใช้เป็น Digital ได้ (A0=Pin14, A1=Pin15, A2=Pin16, A3=Pin17)
 
 ## การต่อสายไฟ
 
 ```
 Rotary Encoder          Lotus Nano Bot
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CLK  (A) ──────────────► D3
-DT   (B) ──────────────► A0 (D14)
-SW   (Btn) ────────────► A1 (D15)
-VCC  (+) ──────────────► 5V
-GND  (-) ──────────────► GND
+CLK  ──────────────────► A0 (D14)
+DT   ──────────────────► A1 (D15)
+SW   ──────────────────► A2 (D16)
++    ──────────────────► 5V
+GND  ──────────────────► GND
 ```
 
-### ภาพการต่อสาย (Text Diagram)
+### ภาพการต่อสายกับบอร์ด
 
-```
-       +------------------+
-       |  Rotary Encoder  |
-       |    +------+      |
-       |    |      |      |
-       +----+------+------+
-            |  |  |  |  |
-            |  |  |  |  |
-        +---+---+--+--+---+---+
-        |CLK|DT |SW |VCC|GND|
-        |   |   |   |   |   |
-        | D3| A0| A1| 5V|GND|
-        |   |   |   |   |   |
-        +---+---+---+---+---+
-            Lotus Nano Bot
-```
+![ภาพการต่อสายกับ Lotus Nano Bot](../../assets/diagrams/rotary-encoder-lotus.png)
 
 ## โค้ดตัวอย่าง
 
 ```cpp
 // Rotary Encoder Example for Lotus Nano Bot
-// CLK -> D3, DT -> A0 (D14), SW -> A1 (D15)
+// CLK -> A0 (D14), DT -> A1 (D15), SW -> A2 (D16)
 
-#define CLK_PIN 3
-#define DT_PIN 14  // A0
-#define SW_PIN 15  // A1
+#define CLK_PIN 14  // A0
+#define DT_PIN 15   // A1
+#define SW_PIN 16   // A2
 
 int counter = 0;
 int currentStateCLK;
@@ -106,25 +93,28 @@ void loop() {
 ## หมายเหตุ
 
 - ใช้ `INPUT_PULLUP` เพื่อให้ Arduino จ่ายไฟ Pull-up ภายใน
-- การอ่านค่าควรใช้ Interrupt เพื่อความแม่นยำในการนับ (ตัวอย่างด้านล่าง)
+- การอ่านค่าควรใช้ Interrupt เพื่อความแม่นยำในการนับ (ตัวอย่างด้านล่างใช้ Pin Change Interrupt ของขา A0)
 - ตัวอย่างโค้ดด้านบนเป็นแบบ Polling ง่ายต่อการเข้าใจ
 
 ### โค้ดแบบใช้ Interrupt (ขั้นสูง)
 
-> **⚠️ คำเตือน:** Arduino Nano มี External Interrupt เพียง 2 ขา คือ D2 (INT0) และ D3 (INT1) บน Lotus Nano Bot ขา D2 ใช้กับปุ่มบนบอร์ด จึงใช้ CLK -> D3 (INT1) ได้ แต่ D3 ต่อร่วมกับบัซเซอร์บนบอร์ด อาจได้ยินเสียงคลิกเบาๆ ขณะหมุน และห้ามใช้ `tone()` ในโปรแกรมนี้ หากไม่ต้องการเสียงรบกวนให้ใช้โค้ดแบบ Polling ด้านบน (ขา D8, D9 ใช้กับมอเตอร์ จึงไม่ควรนำมาใช้)
+> **⚠️ หมายเหตุ:** Arduino Nano มี External Interrupt (`attachInterrupt()`) เฉพาะ D2/D3 ซึ่งบน Lotus Nano Bot ใช้กับปุ่มและบัซเซอร์บนบอร์ด ตัวอย่างนี้จึงใช้ **Pin Change Interrupt** ของ ATmega328P ที่ขา A0 (PCINT8) แทน โดยใช้การต่อสายเดิม
 
 ```cpp
-#define CLK_PIN 3  // D3 = INT1 (ต่อร่วมกับบัซเซอร์บนบอร์ด)
-#define DT_PIN 14  // A0
+#define CLK_PIN 14  // A0 (PCINT8)
+#define DT_PIN 15   // A1
 
 volatile int counter = 0;
+volatile uint8_t lastCLK;
 
 void setup() {
   Serial.begin(9600);
   pinMode(CLK_PIN, INPUT_PULLUP);
   pinMode(DT_PIN, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(CLK_PIN), readEncoder, CHANGE);
-  Serial.println("Rotary Encoder with Interrupt");
+  lastCLK = digitalRead(CLK_PIN);
+  PCICR |= (1 << PCIE1);    // เปิด Pin Change Interrupt กลุ่มขา A0-A5
+  PCMSK1 |= (1 << PCINT8);  // เลือกเฉพาะขา A0 (CLK)
+  Serial.println("Rotary Encoder with Pin Change Interrupt");
 }
 
 void loop() {
@@ -138,11 +128,15 @@ void loop() {
   }
 }
 
-void readEncoder() {
-  if (digitalRead(CLK_PIN) != digitalRead(DT_PIN)) {  // ทิศทางเดียวกับโค้ด Polling (CW = +)
-    counter++;
-  } else {
-    counter--;
+ISR(PCINT1_vect) {  // ทำงานทุกครั้งที่ขา A0 เปลี่ยนสถานะ
+  uint8_t clk = digitalRead(CLK_PIN);
+  if (clk != lastCLK) {
+    if (clk != digitalRead(DT_PIN)) {  // ทิศทางเดียวกับโค้ด Polling (CW = +)
+      counter++;
+    } else {
+      counter--;
+    }
+    lastCLK = clk;
   }
 }
 ```
@@ -155,7 +149,7 @@ void readEncoder() {
 3. นักเรียนสามารถเปรียบเทียบการอ่านค่าแบบ Polling กับแบบ Interrupt ได้
 
 ### ขั้นตอนการทดลอง
-1. ต่อ CLK -> D3, DT -> A0, SW -> A1, VCC -> 5V, GND -> GND แล้วอัปโหลดโค้ดแบบ Polling
+1. ต่อ CLK -> A0, DT -> A1, SW -> A2, + -> 5V, GND -> GND แล้วอัปโหลดโค้ดแบบ Polling
 2. หมุนตามเข็มนาฬิกา 10 คลิก แล้วทวนเข็ม 5 คลิก บันทึกค่า Counter
 3. หมุนครบ 1 รอบ นับว่าได้กี่คลิก แล้วกดปุ่มเพื่อรีเซ็ต
 4. หมุนเร็วๆ 1 รอบ เปรียบเทียบผลกับการหมุนช้า
@@ -179,7 +173,7 @@ void readEncoder() {
 <summary>แนวคำตอบ (สำหรับครู)</summary>
 
 1. สัญญาณ CLK และ DT ต่างเฟสกัน 90° (Quadrature) เมื่อ CLK เปลี่ยน ถ้า DT ต่างจาก CLK คือหมุนทางหนึ่ง ถ้าเท่ากันคือหมุนอีกทาง
-2. แบบ Polling อาจนับตกหล่นเมื่อหมุนเร็ว เพราะ `loop()` อาจตรวจไม่ทันทุกขอบสัญญาณ แบบ Interrupt ตอบสนองทันทีจึงแม่นยำกว่า (แต่นับ 2 ครั้งต่อคลิกเพราะใช้ CHANGE)
+2. แบบ Polling อาจนับตกหล่นเมื่อหมุนเร็ว เพราะ `loop()` อาจตรวจไม่ทันทุกขอบสัญญาณ แบบ Interrupt ตอบสนองทันทีจึงแม่นยำกว่า (แต่นับ 2 ครั้งต่อคลิกเพราะ Pin Change Interrupt ทำงานทั้งขอบขาขึ้นและขาลง)
 3. เช่น เลือกเมนูบน OLED, ปรับความเร็วมอเตอร์, ปรับมุมเซอร์โวทีละขั้น
 
 </details>

@@ -104,7 +104,7 @@ def parse_readme(path: Path):
         rows.append({"pin": left, "port": ports[0], "optional": optional, "alt": alt, "note": note})
 
     img = re.search(r"!\[[^\]]*\]\(\.\./\.\./(assets/images/[^)]+)\)", text)
-    diag = re.search(r"!\[[^\]]*\]\(\.\./\.\./(assets/diagrams/[^)]+)\)", text)
+    diag = re.search(r"!\[[^\]]*\]\(\.\./\.\./(assets/diagrams/[^)]+-wiring\.png)\)", text)
     return {
         "code": code,
         "name": name,
