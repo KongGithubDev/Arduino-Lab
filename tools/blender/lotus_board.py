@@ -297,6 +297,23 @@ box("oled_case_top", 30.0, 30.0, 2.0, OX, OY, OZ + 4.0, MAT["acrylic_clear"], be
 box("ads_header", 2.5, 10 * PITCH, 8.5, 31.8, 17.2 - 4.5 * PITCH, TOP, MAT["plastic_black"], bevel=0.15)
 box("bt_header", 4 * PITCH, 2.5, 8.5, 32.5, 21.9 + 0.2, TOP, MAT["plastic_black"], bevel=0.15)
 box("compass_header", 5 * PITCH, 2.5, 8.5, 15.78, -7.2, TOP, MAT["plastic_black"], bevel=0.15)
+
+# socket holes on the female headers: a square opening with the gold contact visible inside
+HOLE_MAT = material("socket_hole", srgb("#020202"), rough=0.9)
+CONTACT_MAT = MAT["gold"]
+
+
+def socket_holes(prefix, positions):
+    ztop = TOP + 8.5
+    for i, (x, y) in enumerate(positions):
+        box(f"{prefix}_hole_{i}", 1.15, 1.15, 0.06, x, y, ztop - 0.03, HOLE_MAT)          # dark opening
+        box(f"{prefix}_bevel_{i}", 1.55, 1.55, 0.04, x, y, ztop - 0.035, MAT["plastic_gray"])  # chamfer ring
+        box(f"{prefix}_contact_{i}", 0.5, 0.5, 0.05, x, y, ztop - 0.02, CONTACT_MAT)         # spring contact
+
+
+socket_holes("ads", [(31.8, 17.2 - i * PITCH) for i in range(10)])
+socket_holes("bt", [(32.5 + (i - 1.5) * PITCH, 22.1) for i in range(4)])
+socket_holes("compass", [(15.78 + (i - 2) * PITCH, -7.2) for i in range(5)])
 res = cyl("compass_resistor", 1.1, 6.0, 15.8, -13.6, TOP + 0.6, MAT["res_blue"], rot=(0, math.radians(90), 0))
 for i, c in enumerate(("#8b4513", "#000000", "#ff0000", "#d4af37")):
     cyl("res_band", 1.15, 0.45, 13.6 + i * 1.2, -13.6, TOP + 0.6, material(f"band_{c}", srgb(c), rough=0.4), seg=20, rot=(0, math.radians(90), 0))
