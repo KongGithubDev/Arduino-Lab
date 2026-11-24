@@ -49,10 +49,10 @@ IN ──────────────────► A0 (D14)
 
 #define RELAY_PIN 14  // A0
 
-// โมดูลแบบ Active Low: ON = LOW, OFF = HIGH
-// ถ้าเป็นแบบ Active High (KY-019 หลายรุ่น) ให้สลับเป็น ON = HIGH, OFF = LOW
-#define RELAY_ON  LOW
-#define RELAY_OFF HIGH
+// KY-019 ขับคอยล์ผ่านทรานซิสเตอร์ NPN จึงเป็นแบบ Active High: ON = HIGH, OFF = LOW
+// (ถ้าใช้โมดูลรีเลย์แบบมี Optocoupler/ขา JD-VCC ซึ่งเป็น Active Low ให้สลับค่า)
+#define RELAY_ON  HIGH
+#define RELAY_OFF LOW
 
 void setup() {
   Serial.begin(9600);
@@ -76,8 +76,8 @@ void loop() {
 
 ```cpp
 #define RELAY_PIN 14  // A0
-#define RELAY_ON  LOW   // Active Low (สลับถ้าเป็น Active High)
-#define RELAY_OFF HIGH
+#define RELAY_ON  HIGH  // KY-019 = Active High
+#define RELAY_OFF LOW
 
 void setup() {
   pinMode(RELAY_PIN, OUTPUT);
@@ -102,8 +102,9 @@ void loop() {
 ## หมายเหตุสำคัญ
 
 - **⚠️ อันตรายจากไฟฟ้า:** 220V AC อันตรายถึงชีวิต! ต้องระมัดระวังเมื่อต่อไฟ AC
-- บางโมดูลเป็น Active Low (LOW = ON, HIGH = OFF)
-- บางโมดูลเป็น Active High ให้ทดสอบก่อนใช้งานจริง
+- KY-019 เป็นแบบ **Active High** (HIGH = รีเลย์ทำงาน ได้ยินเสียงคลิก ไฟ LED บนโมดูลติด)
+- โมดูลรีเลย์แบบมี Optocoupler (มีขา JD-VCC) มักเป็น Active Low ให้ทดสอบก่อนใช้งานจริง
+- **ขั้วสกรู:** COM = ขาร่วม · NO (Normally Open) = ต่อกับ COM เมื่อรีเลย์ทำงาน · NC (Normally Closed) = ต่อกับ COM เมื่อรีเลย์ไม่ทำงาน
 - รุ่นที่มี Optocoupler จะแยกวงจรควบคุมออกจากวงจรกำลัง
 - บน Lotus Nano Bot ใช้ A0-A3 (เป็น Digital Output) ได้ ไม่ต่อที่ D3 เพราะต่อร่วมกับบัซเซอร์ในตัว
 - คอยล์รีเลย์กินไฟราว 70-90 mA จากขา 5V ควรใช้แบตเตอรี่ที่ชาร์จเต็ม
@@ -137,7 +138,7 @@ void loop() {
 <summary>แนวคำตอบ (สำหรับครู)</summary>
 
 1. กระแสผ่านขดลวดสร้างสนามแม่เหล็กดึงหน้าสัมผัสให้ต่อ/ตัดวงจร วงจรควบคุมกับวงจรโหลดจึงแยกจากกันทางไฟฟ้า
-2. เป็นแบบ Active High ให้แก้ `#define RELAY_ON HIGH` และ `#define RELAY_OFF LOW`
+2. KY-019 เป็นแบบ Active High: สั่ง HIGH แล้วรีเลย์ทำงาน (ถ้าเป็นโมดูลแบบ Active Low ให้แก้ `#define RELAY_ON LOW` และ `#define RELAY_OFF HIGH`)
 3. ขา NO เพราะปกติปั๊มจะปิด และทำงานเฉพาะเมื่อสั่งรีเลย์ หากไฟ Arduino ดับปั๊มจะหยุดเอง (ปลอดภัยกว่า)
 
 </details>

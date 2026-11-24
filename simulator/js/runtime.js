@@ -76,8 +76,22 @@ export function transpile(code) {
   });
 
   // object declarations:  Servo sv1;  DHT dht(PIN, DHT11);  Adafruit_SSD1306 OLED(-1);
-  const clsRe = new RegExp(`\\b(${CLASS_NAMES.join('|')})\\s+(\\w+)\\s*(\\(([^;]*)\\))?\\s*;`, 'g');
-  src = src.replace(clsRe, (_, cls, name, __, args) => `let ${name} = new ${cls}(${args || ''});`);
+  // also lists:  Servo a, b;   DHT dht(PIN, DHT11), dht2(PIN2, DHT22);
+  const clsRe = new RegExp(`\\b(${CLASS_NAMES.join('|')})\\s+(\\w+\\s*(?:\\([^;]*?\\))?(?:\\s*,\\s*\\w+\\s*(?:\\([^;]*?\\))?)*)\\s*;`, 'g');
+  src = src.replace(clsRe, (_, cls, list) => {
+    const parts = [];
+    let depth = 0, cur = '';
+    for (const ch of list) {
+      if (ch === '(') depth++;
+      if (ch === ')') depth--;
+      if (ch === ',' && depth === 0) { parts.push(cur); cur = ''; } else cur += ch;
+    }
+    parts.push(cur);
+    return 'let ' + parts.map((p) => {
+      const m = p.trim().match(/^(\w+)\s*(?:\((.*)\))?$/s);
+      return `${m[1]} = new ${cls}(${m[2] || ''})`;
+    }).join(', ') + ';';
+  });
 
   // static locals -> hoisted globals
   const hoisted = [];
@@ -407,6 +421,9 @@ export function makeApi(mcu, hw) {
   };
   api.IrSender = { begin(pin) { this.pin = pinNum(pin); }, sendNEC(addr, cmd) { hw.irSend(this.pin, cmd); } };
   api.IRDATA_FLAGS_IS_REPEAT = 1;
+  api.getProtocolString = () => 'NEC';
+  api.UNKNOWN = 0;
+  api.printIRResultShort = (ser) => api.IrReceiver.printIRResultShort(ser);
   api.NEC = 8;
   api.Adafruit_ADS1115 = class { begin() { return true; } setGain() {} readADC_SingleEnded(ch) { return hw.adsRead(ch); } computeVolts(v) { return (v * 6.144) / 32768; } };
   api.GAIN_TWOTHIRDS = 0;

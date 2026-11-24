@@ -190,3 +190,11 @@ sl-alert::part(base) { font-size: 13.5px; }
 /* Shoelace toast stack: bottom-right so it never covers the run button */
 .sl-toast-stack { top: auto !important; bottom: 250px; right: 450px; }
 @media (max-width: 1024px), (pointer: coarse) and (max-width: 1366px) { .sl-toast-stack { right: 0; bottom: 70px; } }
+
+/* 5 V rail meter in the status bar */
+.statusbar .rail { padding: 0 8px; border-radius: 6px; }
+.statusbar .rail.okv { color: #86efac; }
+.statusbar .rail.warnv { color: #fcd34d; background: rgba(252, 211, 77, .08); }
+.statusbar .rail.bad { color: #fca5a5; background: rgba(248, 113, 113, .15); }
+.how { margin-bottom: 8px; }
+.how::part(base) { font-size: 12.5px; }

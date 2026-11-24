@@ -149,9 +149,72 @@ export function buildMotor() {
   return g;
 }
 
-export const EXTRA_BUILDERS = { 'servo-sg90': buildServo, 'tt-motor': buildMotor };
+// ------------------------------------------------------------------ lamp + 2xAA battery holder (load for the relay)
+export function buildLamp() {
+  const g = new THREE.Group();
+  // battery holder 2 x AA
+  const holder = box(58, 15, 32, std(0x141414, { roughness: 0.6 }), 1);
+  holder.position.set(0, 7.5 * mm, 0);
+  g.add(holder);
+  for (const z of [-7.5, 7.5]) {
+    const cell = cyl(7, 7, 50, new THREE.MeshPhysicalMaterial({ color: 0x2b6be0, roughness: 0.3, clearcoat: 0.6 }), 32);
+    cell.rotation.z = Math.PI / 2;
+    cell.position.set(0, 13 * mm, z * mm);
+    const cap = cyl(7.05, 7.05, 6, std(0xc9ccd1, { metalness: 1, roughness: 0.3 }), 32);
+    cap.rotation.z = Math.PI / 2;
+    cap.position.set(22 * mm, 13 * mm, z * mm);
+    g.add(cell, cap);
+  }
+  // lamp socket + bulb on a small base
+  const base = box(22, 6, 22, std(0xe9e3d4, { roughness: 0.5 }), 1.5);
+  base.position.set(46 * mm, 3 * mm, 0);
+  const socket = cyl(6, 6, 10, std(0xc9ccd1, { metalness: 0.9, roughness: 0.35 }), 32);
+  socket.position.set(46 * mm, 11 * mm, 0);
+  const glassMat = new THREE.MeshPhysicalMaterial({ color: 0xfff3cf, roughness: 0.05, transmission: 0.6, thickness: 1, transparent: true, opacity: 0.55, emissive: 0xffc861, emissiveIntensity: 0 });
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(8 * mm, 32, 24), glassMat);
+  bulb.scale.y = 1.25;
+  bulb.position.set(46 * mm, 25 * mm, 0);
+  bulb.name = 'lamp_bulb';
+  const filament = new THREE.Mesh(new THREE.TorusGeometry(2.2 * mm, 0.35 * mm, 8, 24, Math.PI), new THREE.MeshStandardMaterial({ color: 0x553311, emissive: 0xffaa33, emissiveIntensity: 0 }));
+  filament.position.set(46 * mm, 25 * mm, 0);
+  filament.name = 'lamp_filament';
+  g.add(base, socket, bulb, filament);
+  const light = new THREE.PointLight(0xffc861, 0, 0.25, 2);
+  light.position.set(46 * mm, 26 * mm, 0);
+  light.name = 'lamp_light';
+  g.add(light);
+  // battery (+) -> lamp is internal; the two loose leads go to the relay contacts
+  const leadEnd = (name, z, color) => {
+    const curve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-29 * mm, 8 * mm, z * mm), new THREE.Vector3(-38 * mm, 6 * mm, z * mm), new THREE.Vector3(-48 * mm, 3 * mm, z * mm),
+    ]);
+    const t = new THREE.Mesh(new THREE.TubeGeometry(curve, 16, 0.8 * mm, 8), std(color, { roughness: 0.45 }));
+    t.castShadow = true;
+    g.add(t);
+    const tip = cyl(0.9, 0.9, 6, std(0xd9b44a, { metalness: 1, roughness: 0.25 }), 12);
+    tip.rotation.z = Math.PI / 2;
+    tip.position.set(-51 * mm, 3 * mm, z * mm);
+    g.add(tip);
+    g.add(pinAnchor(name, -54, 3, z));
+  };
+  leadEnd('L1', -4, 0xc81e1e);
+  leadEnd('L2', 4, 0x151515);
+  const wireInt = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([
+    new THREE.Vector3(29 * mm, 10 * mm, 0), new THREE.Vector3(36 * mm, 8 * mm, 0), new THREE.Vector3(40 * mm, 6 * mm, 0),
+  ]), 10, 0.7 * mm, 8), std(0xc81e1e));
+  g.add(wireInt);
+  return g;
+}
+
+export const EXTRA_BUILDERS = { 'servo-sg90': buildServo, 'tt-motor': buildMotor, 'lamp-load': buildLamp };
 
 export const EXTRA_CATALOG = [
+  {
+    key: 'lamp-load', code: 'LOAD', name: 'หลอดไฟ + ถ่าน 2 ก้อน (โหลดของรีเลย์)', category: 'actuator',
+    desc: 'วงจรโหลดแยกจากบอร์ด: ถ่าน AA 2 ก้อน (3V) ต่ออนุกรมกับหลอดไฟ ปลายสาย L1, L2 ต่อเข้าขั้วรีเลย์ COM กับ NO (ติดเมื่อรีเลย์ทำงาน) หรือ COM กับ NC (ติดเมื่อรีเลย์ไม่ทำงาน)',
+    image: null, icon: 'lightbulb', readme: 'modules/relay-module/README.md',
+    wires: [], examples: [],
+  },
   {
     key: 'servo-sg90', code: 'SG90', name: 'Micro Servo SG90', category: 'actuator',
     desc: 'เซอร์โวมอเตอร์ขนาดเล็ก หมุน 0-180° ต่อที่หัวต่อ SV1-SV3 (D10-D12) ช่องเหลือง = สัญญาณ แดง = 5V ดำ = GND สั่งงานด้วยไลบรารี Servo',
@@ -250,6 +313,7 @@ void loop() {
 ];
 
 export const EXTRA_BEHAVIORS = {
+  'lamp-load': { env: [], lamp: true, noVcc: true },
   'servo-sg90': { env: [], servo: true },
   'tt-motor': { env: [], motor: true, noVcc: true },
 };

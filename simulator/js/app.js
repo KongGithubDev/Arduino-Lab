@@ -4,6 +4,7 @@ import { BEHAVIORS as KIT_BEHAVIORS } from './behaviors.js';
 import { MCU, runSketch, TranspileError } from './runtime.js';
 import { Oled } from './oled.js';
 import { BOARD_EXAMPLES } from './board-examples.js';
+import { PROFILE, buildProps, updateProps } from './interactions.js';
 import { EXTRA_BUILDERS, EXTRA_CATALOG, EXTRA_BEHAVIORS, buildUsbCable, buildBattery } from './extras.js';
 
 const CATALOG = [...KIT, ...EXTRA_CATALOG];
@@ -16,7 +17,16 @@ const POWER_PINS = ['+', '+5V', 'V+', 'VCC', 'VDD'];
 const GROUND_PINS = ['-', 'G', 'GND'];
 const PORT_TO_PIN = { A0: 14, A1: 15, A2: 16, A3: 17, A4: 18, A5: 19, A6: 20, D0: 0, D1: 1, D3: 3, SV1: 10, SV2: 11, SV3: 12 };
 const PIN_TO_PORT = Object.fromEntries(Object.entries(PORT_TO_PIN).map(([k, v]) => [v, k]));
-const ROW_TH = { S: 'ช่องขาว (S)', '5V': 'ช่องแดง (5V)', GND: 'ช่องดำ (GND)', JST: 'ขั้วต่อมอเตอร์' };
+// female header sockets on the right side of the board (ADS1115, compass, Bluetooth)
+// -> the signal they really carry
+const SOCKET_ALIAS = {
+  'ADS.A0': 'AA0', 'ADS.A1': 'AA1', 'ADS.A2': 'AA2', 'ADS.A3': 'AA3', 'ADS.SDA': 'A4', 'ADS.SCL': 'A5',
+  'CMP.SDA': 'A4', 'CMP.SCL': 'A5', 'BT.TX': 'D1', 'BT.RX': 'D0',
+};
+const canon = (port) => SOCKET_ALIAS[port] || port;
+const ROW_TH = { S: 'ช่องขาว (S)', '5V': 'ช่องแดง (5V)', GND: 'ช่องดำ (GND)', JST: 'ขั้วต่อมอเตอร์', T: 'ขั้วสกรูรีเลย์', NC: 'ขาที่ไม่ได้ต่อกับ Arduino' };
+const RELAY_TERMS = { NC: 0.005, COM: 0, NO: -0.005 }; // z offset (m) of the 3 screw terminals on the KY-019 model
+const TERM_TH = { COM: 'COM (ขาร่วม)', NO: 'NO (ปกติเปิด: ต่อเมื่อรีเลย์ทำงาน)', NC: 'NC (ปกติปิด: ต่อเมื่อรีเลย์ไม่ทำงาน)' };
 const SIGNAL_COLORS = ['#f2c200', '#1f6fe0', '#20a040', '#e87a10', '#9b3fd4', '#e8e8e8'];
 const MOTOR_PINS = { ML: [9, 4, 5], MR: [7, 8, 6] };
 
@@ -88,6 +98,21 @@ function makeHit(obj, anchor, radius) {
   obj.add(hit);
   return hit;
 }
+function textSprite(text, color = '#ffffff') {
+  const c = document.createElement('canvas');
+  c.width = 128; c.height = 64;
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgba(10,12,16,.82)';
+  g.beginPath(); g.roundRect(4, 8, 120, 48, 14); g.fill();
+  g.fillStyle = color; g.font = 'bold 30px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(text, 64, 33);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+  sp.scale.set(0.009, 0.0045, 1);
+  sp.renderOrder = 20;
+  return sp;
+}
 const coarse = matchMedia('(pointer: coarse)').matches; // touch screens get larger targets
 const HIT_R = coarse ? 0.0022 : 0.00155;
 
@@ -104,10 +129,26 @@ async function loadBoard() {
     const hit = makeHit(o, { kind: 'port', obj: o, port: ud.port, row: ud.row }, ud.row === 'JST' ? 0.003 : HIT_R);
     state.ports.push({ obj: o, port: ud.port, row: ud.row, hit });
   }
+  // female header sockets (positions in mm from tools/blender/lotus_board.py, board layout frame)
+  const TOPF = 14.6 + 8.5;
+  const socket = (port, row, xmm, ymm, label) => {
+    const o = new THREE.Object3D();
+    o.position.set(xmm * 0.001, TOPF * 0.001, -ymm * 0.001);
+    root.add(o);
+    const hit = makeHit(o, { kind: 'port', obj: o, port, row, label }, HIT_R);
+    state.ports.push({ obj: o, port, row, hit, label });
+  };
+  const ADS = [['VDD', '5V', 'ADS1115 VDD (ไฟ 5V)'], ['GND', 'GND', 'ADS1115 GND'], ['SCL', 'S', 'ADS1115 SCL (I2C = A5)'], ['SDA', 'S', 'ADS1115 SDA (I2C = A4)'],
+    ['ADDR', 'NC', 'ADS1115 ADDR (เลือก Address)'], ['ALRT', 'NC', 'ADS1115 ALERT'], ['A0', 'S', 'ADS1115 A0 (Analog 16 บิต ช่อง 0)'], ['A1', 'S', 'ADS1115 A1 (ช่อง 1)'], ['A2', 'S', 'ADS1115 A2 (ช่อง 2)'], ['A3', 'S', 'ADS1115 A3 (ช่อง 3)']];
+  ADS.forEach(([n, row, label], i) => socket(row === '5V' || row === 'GND' ? `ADS.${n}` : `ADS.${n}`, row, 31.8, 17.2 - i * 2.54, label));
+  const CMP = [['DRDY', 'NC', 'Compass DRDY (Data Ready)'], ['SDA', 'S', 'Compass SDA (I2C = A4)'], ['SCL', 'S', 'Compass SCL (I2C = A5)'], ['GND', 'GND', 'Compass GND'], ['VCC', '5V', 'Compass VCC (5V)']];
+  CMP.forEach(([n, row, label], i) => socket(`CMP.${n}`, row, 15.78 + (i - 2) * 2.54, -7.2, label));
+  const BT = [['VCC', '5V', 'Bluetooth VCC (5V)'], ['GND', 'GND', 'Bluetooth GND'], ['TX', 'S', 'Bluetooth TX → ขา RX (D0) ของ Nano'], ['RX', 'S', 'Bluetooth RX → ขา TX (D1) ของ Nano']];
+  BT.forEach(([n, row, label], i) => socket(`BT.${n}`, row, 32.5 + (i - 1.5) * 2.54, 22.1, label));
   const find = (n) => { let r = null; root.traverse((o) => { if (!r && o.name && o.name.startsWith(n)) r = o; }); return r; };
   state.parts = {
     screen: find('oled_screen'), nanoL: find('nano_led_3'), nanoPwr: find('nano_led_2'), pwrLed: find('pwr_led'),
-    button: find('btn_cap'), knob: find('knob_shaft'), lever: find('switch_lever'), usb: find('nano_usb'), tplug: find('tplug_housing'),
+    button: find('btn_cap'), knob: find('knob_shaft'), knobSlot: find('knob_slot'), lever: find('switch_lever'), usb: find('nano_usb'), tplug: find('tplug_housing'),
   };
   if (state.parts.screen) state.parts.screen.material = new THREE.MeshBasicMaterial({ map: oled.texture, toneMapped: false });
   root.traverse((o) => {
@@ -141,6 +182,7 @@ async function loadBoard() {
 function setPower(patch) {
   const wasOn = boardOn();
   Object.assign(state.power, patch);
+  state.rail.resets = 0;
   applyPower();
   const nowOn = boardOn();
   if (wasOn && !nowOn) {
@@ -218,6 +260,28 @@ async function addModule(key, pos, { auto = true } = {}) {
   if (spot.ry != null) root.rotation.y = spot.ry;
   stage.scene.add(root);
   const m = { id, key, info, behavior, root, pins, env, leds, dLeds, pwrLeds, light, laser, horn, wheel, wheelAngle: 0, portMap: {} };
+  if (key === 'relay-module') {
+    // screw terminals NC / COM / NO become sockets the load can be wired to
+    m.terms = {};
+    for (const [name, z] of Object.entries(RELAY_TERMS)) {
+      const o = new THREE.Object3D();
+      o.position.set(0.013, 0.0123, z);
+      root.add(o);
+      makeHit(o, { kind: 'port', obj: o, port: `${name}`, row: 'T', ownerId: id, term: name }, HIT_R * 1.3);
+      const label = textSprite(name, name === 'COM' ? '#fbbf24' : name === 'NO' ? '#4ade80' : '#f87171');
+      label.position.set(0.0215, 0.0135, z);
+      root.add(label);
+      m.terms[name] = o;
+    }
+  }
+  m.props = buildProps(m);
+  if (behavior.lamp) {
+    root.traverse((o) => {
+      if (o.name === 'lamp_bulb') m.bulb = o;
+      if (o.name === 'lamp_filament') m.filament = o;
+      if (o.name === 'lamp_light') m.lampLight = o;
+    });
+  }
   state.modules.push(m);
   if (auto) {
     autoWire(m, { quiet: true });
@@ -226,10 +290,21 @@ async function addModule(key, pos, { auto = true } = {}) {
       toast(`วาง ${info.code} แล้ว: ต่อสายและโหลดโค้ดตัวอย่างให้อัตโนมัติ` + (moved.length ? ` (ใช้ ${moved.map(([, b]) => b).join(', ')} แทน ${moved.map(([a]) => a).join(', ')} เพราะพอร์ตเดิมไม่ว่าง)` : '') + ' → กด รัน', 'primary');
     }
   }
+  if (auto && key === 'relay-module') {
+    const lamp = await addModule('lamp-load', { x: root.position.x + 0.085, z: root.position.z + 0.012 }, { auto: false });
+    wireLampToRelay(lamp, m, 'NO');
+    toast('วาง Relay พร้อมหลอดไฟ: ต่อ L1 → COM, L2 → NO แล้ว (หลอดติดเมื่อรีเลย์ทำงาน) → กด รัน', 'primary');
+  }
   select(m);
   renderModuleList();
   save();
   return m;
+}
+
+function wireLampToRelay(lamp, relay, contact = 'NO') {
+  const term = (name) => ({ kind: 'port', obj: relay.terms[name], port: name, row: 'T', ownerId: relay.id, term: name });
+  addWire({ kind: 'pin', obj: lamp.pins.L1, pin: 'L1', moduleId: lamp.id }, term('COM'), '#c81e1e', { quiet: true });
+  addWire({ kind: 'pin', obj: lamp.pins.L2, pin: 'L2', moduleId: lamp.id }, term(contact), '#151515', { quiet: true });
 }
 
 function freeSpot(key) {
@@ -248,7 +323,7 @@ function freeSpot(key) {
 }
 
 function removeModule(m) {
-  for (const w of [...state.wires]) if (w.a.moduleId === m.id) removeWire(w);
+  for (const w of [...state.wires]) if (w.a.moduleId === m.id || w.b.ownerId === m.id) removeWire(w);
   stage.scene.remove(m.root);
   sound('mod' + m.id, 0);
   sound('motor' + m.id, 0);
@@ -263,6 +338,7 @@ function wireColor(pin, port) {
   if (port.row === 'GND') return '#1c1c1c';
   if (port.row === '5V') return '#d62020';
   if (port.row === 'JST') return '#c81e1e';
+  if (port.row === 'T') return pin.pin === 'L2' ? '#151515' : '#c81e1e';
   const used = state.wires.filter((w) => w.b.row === 'S').length;
   return SIGNAL_COLORS[used % SIGNAL_COLORS.length];
 }
@@ -270,7 +346,7 @@ function wireColor(pin, port) {
 /** The wire (and which end) already plugged into a pin or slot, if any. */
 function wireOn(an) {
   for (const w of state.wires) {
-    if (an.kind === 'port' && w.b.port === an.port && w.b.row === an.row) return { wire: w, end: 'b' };
+    if (an.kind === 'port' && w.b.port === an.port && w.b.row === an.row && w.b.ownerId === an.ownerId) return { wire: w, end: 'b' };
     if (an.kind === 'pin' && w.a.moduleId === an.moduleId && w.a.pin === an.pin) return { wire: w, end: 'a' };
   }
   return null;
@@ -314,6 +390,7 @@ function moduleWires(m) {
 
 function pinRole(name, m) {
   if (name === 'M') return 'JST';
+  if (name === 'L1' || name === 'L2') return 'T';
   if (POWER_PINS.includes(name)) return '5V';
   if (name === 'G' && m && m.pins.R) return 'S';
   if (GROUND_PINS.includes(name)) return 'GND';
@@ -339,13 +416,19 @@ function checkWiring() {
     let reverse = false;
     for (const w of ws) {
       const role = pinRole(w.pin, m);
+      if (role === 'T' && w.row !== 'T') issues.push(['warn', `${label}: สายหลอดไฟต้องต่อกับขั้วสกรูรีเลย์ (COM / NO / NC) ไม่ใช่หัวต่อบนบอร์ด`]);
+      if (role !== 'T' && w.row === 'T') issues.push(['err', `${label}: ขา ${w.pin} ต่อเข้าขั้วสกรูรีเลย์: ขั้วนี้ใช้กับวงจรโหลด (เช่น หลอดไฟ) เท่านั้น`]);
       if (role === 'JST' && w.row !== 'JST') issues.push(['warn', `${label}: สายมอเตอร์ต้องเสียบที่ขั้ว ML หรือ MR`]);
       if (role !== 'JST' && w.row === 'JST') issues.push(['err', `${label}: ขา ${w.pin} เสียบเข้าขั้วมอเตอร์ ${w.port}: ผิดช่อง!`]);
       if (role === '5V' && w.row === 'GND') { issues.push(['err', `${label}: ขา ${w.pin} (ไฟ) เสียบช่องดำ GND: ต่อกลับขั้ว!`]); reverse = true; }
       if (role === 'GND' && w.row === '5V') { issues.push(['err', `${label}: ขา ${w.pin} (กราวด์) เสียบช่องแดง 5V: ต่อกลับขั้ว!`]); reverse = true; }
       if (role === 'S' && (w.row === '5V' || w.row === 'GND')) issues.push(['warn', `${label}: ขาสัญญาณ ${w.pin} เสียบ${ROW_TH[w.row]}: ควรเสียบช่องขาว (S)`]);
       if ((role === '5V' || role === 'GND') && w.row === 'S') issues.push(['warn', `${label}: ขา ${w.pin} เป็นขาไฟเลี้ยง แต่เสียบช่องขาว (S)`]);
+      if (w.row === 'NC') issues.push(['info', `${label}: ขา ${w.pin} เสียบที่ ${w.port} ซึ่งไม่ได้ต่อกับ Arduino (ไม่มีผล)`]);
+      if (w.row === 'S' && w.port.startsWith('ADS.') && /A[0-3]$/.test(w.port)) issues.push(['info', `${label}: ${w.port} อ่านผ่าน ADS1115 (I2C) ใช้ไลบรารี Adafruit_ADS1X15: ads.readADC_SingleEnded(${w.port.slice(-1)})`]);
       if (w.row === 'S') {
+        const cp = canon(w.port);
+        if (cp === 'A4' || cp === 'A5') { if (w.port.includes('.')) issues.push(['info', `${label}: ${w.port} คือสาย I2C (${cp}) ใช้ร่วมกับจอ OLED`]); }
         if (w.port === 'D3') issues.push(['info', `${label}: D3 ใช้ร่วมกับบัซเซอร์บนบอร์ด อาจมีเสียงรบกวน`]);
         if (w.port === 'A4' || w.port === 'A5') issues.push(['info', `${label}: ${w.port} ใช้ร่วมกับ I2C (จอ OLED) ถ้าใช้จอพร้อมกันจะทำงานผิดพลาด`]);
         if (w.port === 'D0' || w.port === 'D1') issues.push(['info', `${label}: ${w.port} ใช้ร่วมกับ Serial: Serial Monitor อาจรวน`]);
@@ -357,13 +440,24 @@ function checkWiring() {
       if (ws.length && !motorsOn()) issues.push(['warn', `${label}: มอเตอร์ต้องใช้ไฟจากแบตเตอรี่: ต่อแบต + เปิดสวิตช์ ON`]);
       continue;
     }
+    if (m.behavior.lamp) {
+      const t = ws.filter((w) => w.row === 'T').map((w) => w.wire.b.term);
+      if (ws.length < 2) issues.push(['info', `${label}: ต่อสาย L1, L2 เข้าขั้วรีเลย์ COM กับ NO (หรือ NC)`]);
+      else if (!t.includes('COM')) issues.push(['warn', `${label}: ต้องมีสายหนึ่งเส้นต่อที่ COM ของรีเลย์ ไม่งั้นวงจรไม่ครบ`]);
+      else if (t[0] === t[1]) issues.push(['warn', `${label}: สายทั้งสองเส้นต่อขั้วเดียวกัน`]);
+      continue;
+    }
     const sigPins = Object.keys(m.pins).filter((p) => pinRole(p, m) === 'S');
     if (ws.length && boardOn() && !powered(m) && !reverse) issues.push(['warn', `${label}: ยังไม่ได้ต่อไฟเลี้ยงครบ (5V + GND)`]);
     if (ws.length && sigPins.length && !ws.some((w) => pinRole(w.pin, m) === 'S')) issues.push(['warn', `${label}: ยังไม่ได้ต่อขาสัญญาณ`]);
     if (!ws.length) issues.push(['info', `${label}: ยังไม่ได้ต่อสาย`]);
   }
+  const nServo = state.modules.filter((m) => m.behavior.servo && moduleWires(m).length).length;
+  if (nServo >= 2 && !(state.power.battery && state.power.sw)) issues.push(['warn', `ต่อเซอร์โว ${nServo} ตัว: ตอนหมุนพร้อมกันดึงกระแสรวมเกิน USB (~500mA) บอร์ดจะรีเซ็ต → ต่อแบตเตอรี่ + เปิดสวิตช์ ON (ไฟจากภายนอก)`]);
+  else if (nServo >= 1 && !(state.power.battery && state.power.sw)) issues.push(['info', 'เซอร์โว 1 ตัวใช้ไฟ USB ได้ถ้าไม่มีภาระหนัก ถ้ามีแขนกล/หลายตัว ควรใช้แบตเตอรี่']);
   const byPort = {};
   for (const w of state.wires) { if (w.b.row === 'S' || w.b.row === 'JST') (byPort[w.b.port] ||= []).push(w); }
+  for (const m of state.modules) if (m.key === 'relay-module' && powered(m) && !moduleWires(m).length) issues.push(['info', `${m.info.code}: ยังไม่ได้ต่อสาย`]);
   for (const [port, ws] of Object.entries(byPort)) {
     const mods = new Set(ws.map((w) => w.a.moduleId));
     if (ws.length > 1) issues.push([mods.size > 1 ? 'warn' : 'info', `พอร์ต ${port} มีสาย ${ws.length} เส้น: ${[...mods].map((id) => state.modules.find((m) => m.id === id)?.info.code).join(', ')} ต่อถึงกัน`]);
@@ -378,7 +472,7 @@ const ANALOG_ONLY_MODULES = ['photoresistor', 'analog-temperature-sensor', 'anal
 function planPorts(m) {
   const busy = new Set(state.wires.filter((w) => w.a.moduleId !== m.id && (w.b.row === 'S' || w.b.row === 'JST')).map((w) => w.b.port));
   const map = {};
-  for (const w of (m.info.wires || []).filter((w) => (w.role === 'S' || w.role === 'M') && !w.optional)) {
+  for (const w of (m.info.wires || []).filter((w) => (w.role === 'S' || w.role === 'M') && (!w.optional || m.pins[w.pin]))) {
     if (map[w.port]) continue;
     let port;
     if (w.role === 'M') port = ['ML', 'MR'].find((p) => !busy.has(p)) || 'ML';
@@ -400,7 +494,7 @@ function autoWire(m, { quiet = false } = {}) {
   const portMap = planPorts(m);
   const firstSig = (m.info.wires || []).filter((w) => w.role === 'S' && !w.optional)[0];
   const powerCol = firstSig ? portMap[firstSig.port] || firstSig.port : 'A0';
-  const wanted = (m.info.wires || []).filter((w) => !w.optional).map((w) => ({ ...w, port: w.role === 'S' || w.role === 'M' ? portMap[w.port] || w.port : powerCol }));
+  const wanted = (m.info.wires || []).filter((w) => !w.optional || m.pins[w.pin]).map((w) => ({ ...w, port: w.role === 'S' || w.role === 'M' ? portMap[w.port] || w.port : powerCol }));
   const used = new Set();
   const signalPool = Object.keys(m.pins).filter((p) => pinRole(p, m) === 'S');
   const sorted = [...wanted].sort((a, b) => (a.role !== 'S') - (b.role !== 'S'));
@@ -474,7 +568,7 @@ function moduleOutputs(m, t) {
 
 function signalAt(port, t) {
   for (const w of state.wires) {
-    if (w.b.port !== port || w.b.row !== 'S') continue;
+    if (canon(w.b.port) !== port || w.b.row !== 'S') continue;
     const m = state.modules.find((x) => x.id === w.a.moduleId);
     if (!m) continue;
     const v = moduleOutputs(m, t)[w.a.pin];
@@ -517,7 +611,7 @@ const hw = {
   sensorAt(pin, lib) {
     const port = PIN_TO_PORT[pin];
     for (const w of state.wires) {
-      if (w.b.port !== port || w.b.row !== 'S') continue;
+      if (canon(w.b.port) !== port || w.b.row !== 'S') continue;
       const m = state.modules.find((x) => x.id === w.a.moduleId);
       if (m && m.behavior.lib === lib && powered(m)) return { temperature: m.env.temp, humidity: m.env.hum };
     }
@@ -525,7 +619,7 @@ const hw = {
   },
   irReceive(pin) {
     const port = PIN_TO_PORT[pin];
-    const ok = state.wires.some((w) => w.b.port === port && w.b.row === 'S' && state.modules.find((x) => x.id === w.a.moduleId && x.behavior.lib === 'ir' && powered(x)));
+    const ok = state.wires.some((w) => canon(w.b.port) === port && w.b.row === 'S' && state.modules.find((x) => x.id === w.a.moduleId && x.behavior.lib === 'ir' && powered(x)));
     if (!ok || !state.irQueue.length) return null;
     return state.irQueue.shift();
   },
@@ -546,22 +640,72 @@ const hw = {
       }
     }
   },
-  onReset() { oled.reset(); state.warned.clear(); state.servo = {}; },
+  onReset() { oled.reset(); state.warned.clear(); state.servo = {}; for (const m of state.modules) if (m.behavior.servo && m.horn) m.horn.rotation.y = m.horn.rotation.y; },
 };
 mcu.hw = hw;
 
 function moduleIO(m) {
   const portOf = (pin) => moduleWires(m).find((w) => w.pin === pin && w.row === 'S');
   return {
-    v(pin) { const w = portOf(pin); if (!w) return 0; const p = PORT_TO_PIN[w.port]; if (p == null) return 0; return mcu.running && mcu.mode[p] === 'OUTPUT' && mcu.out[p] ? 5 : 0; },
+    v(pin) { const w = portOf(pin); if (!w) return 0; const p = PORT_TO_PIN[canon(w.port)]; if (p == null) return 0; return mcu.running && mcu.mode[p] === 'OUTPUT' && mcu.out[p] ? 5 : 0; },
     pwm(pin) {
-      const w = portOf(pin); if (!w) return 0; const p = PORT_TO_PIN[w.port]; if (p == null || !mcu.running || mcu.mode[p] !== 'OUTPUT') return 0;
+      const w = portOf(pin); if (!w) return 0; const p = PORT_TO_PIN[canon(w.port)]; if (p == null || !mcu.running || mcu.mode[p] !== 'OUTPUT') return 0;
       if (mcu.softPwm && mcu.softPwm[p] != null) return mcu.softPwm[p];
       return mcu.pwm[p] != null ? mcu.pwm[p] / 255 : mcu.out[p] ? 1 : 0;
     },
-    freq(pin) { const w = portOf(pin); if (!w) return 0; const p = PORT_TO_PIN[w.port]; return mcu.running ? mcu.tones[p] || 0 : 0; },
-    servo(pin) { const w = portOf(pin); if (!w) return null; return state.servo[PORT_TO_PIN[w.port]]; },
+    freq(pin) { const w = portOf(pin); if (!w) return 0; const p = PORT_TO_PIN[canon(w.port)]; return mcu.running ? mcu.tones[p] || 0 : 0; },
+    servo(pin) { const w = portOf(pin); if (!w) return null; return state.servo[PORT_TO_PIN[canon(w.port)]]; },
   };
+}
+
+// ------------------------------------------------------------------ 5 V rail current budget
+// Typical currents (mA). USB through the Nano's polyfuse/diode ~500 mA; the shield's 5 V
+// regulator from the 7.4 V LiPo ~1.5 A. Motors run from the battery (TB6612 VM), not the 5 V rail.
+const LIMIT = { usb: 500, battery: 1500 };
+function moduleCurrent(m, t) {
+  if (!powered(m) || m.reverse) return 0;
+  if (m.behavior.servo) return m.servoMoving ? (t - (m.surgeT || 0) < 120 ? 360 : 220) : 8; // SG90: idle / running / start surge
+  if (m.behavior.motor || m.behavior.lamp) return 0;
+  let mA = m.dLeds.length || m.pwrLeds.length ? 8 : 3;          // module + its indicator LEDs
+  mA += m.ledLoad || 0;
+  if (m.relayOn) mA += 75;                                       // relay coil
+  if (m.laser.visible) mA += 30;
+  if (m.buzzOn) mA += 30;
+  if (m.key === 'joystick-module' || m.key === 'rotary-encoder') mA += 1;
+  return mA;
+}
+state.rail = { mA: 0, V: 5, limit: 500, over: 0, resets: 0 };
+function powerBudget(t) {
+  const r = state.rail;
+  if (!boardOn()) { Object.assign(r, { mA: 0, V: 0, limit: 0, over: 0 }); return; }
+  let mA = 22 + 5 + (oled.on ? 18 : 4) + (state.parts?.nanoL?.material.emissiveIntensity ? 3 : 0) + (mcu.tones[3] ? 25 : 0);
+  for (const m of state.modules) mA += moduleCurrent(m, t);
+  const limit = Math.max(state.power.usb ? LIMIT.usb : 0, state.power.battery && state.power.sw ? LIMIT.battery : 0);
+  r.mA = Math.round(mA);
+  r.limit = limit;
+  // the rail sags as the load approaches the source limit, collapses past it
+  const k = mA / limit;
+  r.V = +(k < 0.7 ? 5 - k * 0.15 : k < 1 ? 4.9 - (k - 0.7) * 1.5 : 4.45 - (k - 1) * 3).toFixed(2);
+  if (k > 1 && mcu.running) {
+    r.over += 1;
+    if (r.over > 3) brownout(mA, limit);   // sustained for a few frames -> brown-out reset
+  } else r.over = 0;
+}
+let lastBrownToast = 0;
+function brownout(mA, limit) {
+  const r = state.rail;
+  r.over = 0;
+  r.resets++;
+  const src = state.power.battery && state.power.sw ? 'แบตเตอรี่ (~1.5A)' : 'USB (~500mA)';
+  const servos = state.modules.filter((m) => m.behavior.servo && m.servoMoving).length;
+  serialWrite(`\n⚡ ไฟตก! ใช้กระแส ${Math.round(mA)} mA เกินที่ ${src} จ่ายได้ (${limit} mA) แรงดัน 5V ตก → Nano รีเซ็ต\n`);
+  if (performance.now() - lastBrownToast > 4000) {
+    lastBrownToast = performance.now();
+    toast(`ไฟไม่พอ! บอร์ดรีเซ็ต (${Math.round(mA)} mA > ${limit} mA)` + (servos ? ` · เซอร์โว ${servos} ตัวหมุนพร้อมกันดึงกระแสสูง` : '') + (state.power.battery && state.power.sw ? '' : ' → ต่อแบตเตอรี่ + เปิดสวิตช์ ON'), 'danger');
+  }
+  // the real board resets: the program starts again from setup()
+  for (const m of state.modules) if (m.behavior.servo) m.servoMoving = false;
+  if (state.uploaded) startSketch(state.uploaded);
 }
 
 function motorSpeed(port) {
@@ -587,15 +731,19 @@ stage.onFrame.push((t) => {
     const dl = on && m.behavior.dLed ? m.behavior.dLed(m.env, t) : false;
     for (const p of m.dLeds) { p.material.emissive = new THREE.Color(0xff2020); p.material.emissiveIntensity = dl ? 3 : 0; }
     const io = moduleIO(m);
+    m.ledLoad = 0; m.buzzOn = false;
     if (m.behavior.servo && m.horn) {
       const a = on ? io.servo('S') : null;
+      const wasMoving = m.servoMoving;
+      m.servoMoving = false;
       if (a != null) {
         const target = THREE.MathUtils.degToRad(a - 90);
         const cur = m.horn.rotation.y;
         const step = Math.sign(target - cur) * Math.min(Math.abs(target - cur), dt * 10.5); // ~0.1 s / 60 deg
-        if (Math.abs(step) > 1e-4) { m.horn.rotation.y = cur + step; sound('servo' + m.id, 1800 + Math.random() * 200, 'sawtooth'); }
+        if (Math.abs(step) > 1e-4) { m.horn.rotation.y = cur + step; m.servoMoving = true; sound('servo' + m.id, 1800 + Math.random() * 200, 'sawtooth'); }
         else sound('servo' + m.id, 0);
       } else sound('servo' + m.id, 0);
+      if (m.servoMoving && !wasMoving) m.surgeT = t; // inrush current when the motor starts
       continue;
     }
     if (m.behavior.motor && m.wheel) {
@@ -612,18 +760,42 @@ stage.onFrame.push((t) => {
       const k = Math.max(r, g, b);
       const col = new THREE.Color(r, g, b);
       for (const p of m.leds) { p.material.emissive = col; p.material.emissiveIntensity = on ? k * 4 : 0; }
+      m.ledLoad = on ? (r + g + b) * 15 : 0; // ~15 mA per lit LED channel
       m.light.color = col; m.light.intensity = on ? k * 0.02 : 0;
     } else if (v.relay !== undefined) {
       const r = v.relay && on;
+      m.relayOn = r;
       for (const p of m.leds) { p.material.emissive = new THREE.Color(0xff2020); p.material.emissiveIntensity = r ? 3 : 0; }
       if (r !== m.lastRelay) { if (m.lastRelay !== undefined) click(); m.lastRelay = r; }
     }
     m.laser.visible = !!v.laser && on;
     if (v.ir !== undefined) for (const p of m.leds) { p.material.emissive = new THREE.Color(0x7a3cff); p.material.emissiveIntensity = v.ir && on && $('#irCam')?.checked ? 2.5 : 0; }
     const f = on ? v.buzzer : 0;
+    m.buzzOn = !!f && f !== -1;
     sound('mod' + m.id, f === -1 ? 0 : f || 0, 'square');
   }
-  if (state.parts?.knob) state.parts.knob.rotation.y = -(state.knob - 0.5) * Math.PI * 1.5;
+  for (const m of state.modules) updateProps(m, t, dt, { powered: powered(m), wiresUpdate: () => { for (const w of state.wires) if (w.a.moduleId === m.id || w.b.ownerId === m.id) w.update(); } });
+  powerBudget(t);
+  // lamp loads: lit when their two leads are bridged by a closed relay contact
+  for (const m of state.modules) {
+    if (!m.behavior.lamp) continue;
+    const ws = moduleWires(m).filter((w) => w.row === 'T').map((w) => w.wire.b);
+    let lit = false;
+    if (ws.length === 2 && ws[0].ownerId === ws[1].ownerId) {
+      const relay = state.modules.find((x) => x.id === ws[0].ownerId);
+      const terms = ws.map((b) => b.term);
+      const closed = relay?.relayOn ? 'NO' : 'NC';
+      lit = terms.includes('COM') && terms.includes(closed);
+    }
+    if (m.bulb) { m.bulb.material.emissiveIntensity = lit ? 6 : 0; m.bulb.material.opacity = lit ? 0.9 : 0.55; }
+    if (m.filament) m.filament.material.emissiveIntensity = lit ? 8 : 0;
+    if (m.lampLight) m.lampLight.intensity = lit ? 0.6 : 0;
+    m.lit = lit;
+  }
+  // the knurled shaft and the slot mark on top are separate meshes: turn both (270 degree pot)
+  const knobAngle = -(state.knob - 0.5) * Math.PI * 1.5;
+  if (state.parts?.knob) state.parts.knob.rotation.y = knobAngle;
+  if (state.parts?.knobSlot) state.parts.knobSlot.rotation.y = knobAngle;
   const btn = state.parts?.button;
   if (btn) { btn.userData.y0 ??= btn.position.y; btn.position.y = btn.userData.y0 - (state.d2Pressed ? 0.9 : 0); }
   updateStatus();
@@ -736,7 +908,29 @@ let press = null; // { x, y, kind, ... } for tap vs drag detection
 const DRAG_PX = coarse ? 12 : 6;
 
 canvas.addEventListener('pointermove', (e) => {
-  if (press && !press.dragging && Math.hypot(e.clientX - press.x, e.clientY - press.y) > DRAG_PX) {
+  if (press?.kind === 'module') {
+    const m = press.m, dx = e.clientX - press.x, dy = e.clientY - press.y;
+    if (press.mode === 'stick') {
+      m.env.x = Math.round(Math.max(-100, Math.min(100, dx / 0.9)));
+      m.env.y = Math.round(Math.max(-100, Math.min(100, -dy / 0.9)));
+      press.dragging = Math.hypot(dx, dy) > DRAG_PX;
+      syncEnv(m);
+      return;
+    }
+    if (press.mode === 'rotary') {
+      m.env.enc = press.env0.enc + Math.round(dx / 6);
+      press.dragging = Math.abs(dx) > DRAG_PX;
+      syncEnv(m);
+      return;
+    }
+    if (!press.dragging && Math.hypot(dx, dy) > DRAG_PX * 1.5) {
+      // it is a move, not a press: release the hold and drag the module
+      press.dragging = true;
+      if (press.holding) { m.env[press.prof.hold] = false; press.holding = false; syncEnv(m); }
+      if (press.ground) drag = { m, off: { x: press.ground.x - m.root.position.x, z: press.ground.z - m.root.position.z } };
+    }
+  }
+  if (press && press.kind !== 'module' && !press.dragging && Math.hypot(e.clientX - press.x, e.clientY - press.y) > DRAG_PX) {
     press.dragging = true;
     if (press.kind === 'housing') {
       // pulling a Dupont housing off its pin: unplug that end and carry it
@@ -762,7 +956,7 @@ canvas.addEventListener('pointermove', (e) => {
   let text = '';
   if (a) {
     const an = a.userData.anchor;
-    text = an.kind === 'port' ? (an.row === 'JST' ? `ขั้วมอเตอร์ ${an.port} (${an.port === 'ML' ? 'ซ้าย D9/D4/D5' : 'ขวา D7/D8/D6'})` : `พอร์ต ${an.port} · ${ROW_TH[an.row]}`) : `ขา ${an.pin} ของ ${state.modules.find((m) => m.id === an.moduleId)?.info.code}`;
+    text = an.label ? `หัวต่อ ${an.label}` : an.row === 'T' ? `ขั้วรีเลย์ ${TERM_TH[an.term]}` : an.kind === 'port' ? (an.row === 'JST' ? `ขั้วมอเตอร์ ${an.port} (${an.port === 'ML' ? 'ซ้าย D9/D4/D5' : 'ขวา D7/D8/D6'})` : `พอร์ต ${an.port} · ${ROW_TH[an.row]}`) : `ขา ${an.pin} ของ ${state.modules.find((m) => m.id === an.moduleId)?.info.code}`;
   } else if (!coarse) {
     const bh = state.board ? stage.pick(e, [state.board, state.usbCable, state.batteryPack].filter(Boolean))[0]?.object : null;
     const n = bh?.name || '';
@@ -834,9 +1028,13 @@ canvas.addEventListener('pointerdown', (e) => {
   if (mh) {
     let o = mh.object; while (o && !o.userData.moduleId) o = o.parent;
     const m = state.modules.find((x) => x.id === o.userData.moduleId);
-    select(m);
-    const p = stage.groundPoint(e);
-    if (p) { drag = { m, off: { x: p.x - m.root.position.x, z: p.z - m.root.position.z } }; lockOrbit(); }
+    if (state.selected !== m) select(m);
+    const prof = PROFILE[m.key] || {};
+    const local = m.root.worldToLocal(mh.point.clone());
+    Object.assign(press, { kind: 'module', m, prof, t0: performance.now(), ground: stage.groundPoint(e), env0: { ...m.env } });
+    press.mode = prof.stick && local.y > 0.011 ? 'stick' : prof.rotary && local.y > 0.007 ? 'rotary' : 'body';
+    if (press.mode === 'body' && prof.hold) { m.env[prof.hold] = true; press.holding = true; syncEnv(m); }
+    lockOrbit();
     return;
   }
   // 5) a wire: select it (delete with the button / Delete key / right-click)
@@ -849,6 +1047,20 @@ canvas.addEventListener('pointerup', (e) => {
   const p = press;
   press = null;
   if (!p) return;
+  if (p.kind === 'module') {
+    const m = p.m;
+    if (p.holding) m.env[p.prof.hold] = false;
+    if (p.mode === 'stick') {
+      if (!p.dragging) { m.env.press = true; setTimeout(() => { m.env.press = false; syncEnv(m); }, 300); }
+      m.env.x = 0; m.env.y = 0; // the stick springs back to centre
+    } else if (p.mode === 'rotary') {
+      if (!p.dragging) { m.env.press = true; setTimeout(() => { m.env.press = false; syncEnv(m); }, 300); }
+    } else if (!p.dragging && performance.now() - p.t0 < 450 && p.prof.tap) {
+      p.prof.tap(m.env);
+    }
+    syncEnv(m, true);
+    return;
+  }
   if (p.kind === 'anchor' && p.dragging && state.pending) {
     // drag-to-connect: released over a target
     const an = anchorAt(e);
@@ -874,6 +1086,42 @@ function rotateModule(m, dir = 1) {
   m.root.rotation.y += (dir * Math.PI) / 2;
   state.wires.forEach((w) => w.update());
   save();
+}
+
+canvas.addEventListener('wheel', (e) => {
+  const mh = stage.pick(e, state.modules.map((m) => m.root))[0];
+  if (!mh) return;
+  let o = mh.object; while (o && !o.userData.moduleId) o = o.parent;
+  const m = state.modules.find((x) => x.id === o.userData.moduleId);
+  const prof = PROFILE[m?.key];
+  if (!prof || (!prof.wheel && !prof.rotary)) return;
+  e.preventDefault();
+  e.stopImmediatePropagation(); // do not zoom the camera
+  const dir = e.deltaY < 0 ? 1 : -1;
+  if (prof.rotary) m.env.enc += dir * 2;
+  else {
+    const c = (m.behavior.env || []).find((x) => x.id === prof.wheel.id);
+    m.env[c.id] = Math.max(c.min, Math.min(c.max, +(m.env[c.id] + dir * prof.wheel.step).toFixed(2)));
+  }
+  if (state.selected !== m) select(m);
+  syncEnv(m);
+}, { passive: false, capture: true });
+
+/** Reflect env changes made in 3D back into the side panel controls. */
+function syncEnv(m, full = false) {
+  if (state.selected !== m) return;
+  const box = $('#envBox');
+  if (!box) return;
+  for (const c of m.behavior.env || []) {
+    const v = m.env[c.id];
+    const el = box.querySelector(`[data-id="${c.id}"]`);
+    if (!el) continue;
+    if (c.type === 'range') { if (+el.value !== v) el.value = v; const out = box.querySelector('#o_' + c.id); if (out) out.textContent = v + (c.unit || ''); }
+    else if (c.type === 'toggle') el.checked = !!v;
+    else if (c.type === 'select') el.value = v;
+    else if (c.type === 'hold') el.variant = v ? 'success' : 'neutral';
+  }
+  if (full && m.behavior.lamp) renderEnv(m);
 }
 
 function selectWire(w) {
@@ -1002,11 +1250,21 @@ function renderEnv(m) {
   const box = $('#envBox');
   const ctrls = m.behavior.env || [];
   if (!ctrls.length) {
+    if (m.behavior.lamp) {
+      box.innerHTML = `<p class="muted small"><sl-icon name="lightbulb"></sl-icon> หลอดไฟ: <b>${m.lit ? 'ติด' : 'ดับ'}</b> · ต่อ L1/L2 เข้า <b>COM + NO</b> = ติดเมื่อรีเลย์ทำงาน, <b>COM + NC</b> = ติดเมื่อรีเลย์ไม่ทำงาน</p>
+        <div class="btnrow"><sl-button size="small" id="lampNO">ต่อกับ COM + NO</sl-button><sl-button size="small" id="lampNC">ต่อกับ COM + NC</sl-button></div>`;
+      const relay = () => state.modules.find((x) => x.key === 'relay-module');
+      const rewire = (c) => { const r = relay(); if (!r) { toast('ยังไม่มีโมดูล Relay บนโต๊ะ', 'warning'); return; } for (const w of [...state.wires]) if (w.a.moduleId === m.id) removeWire(w); wireLampToRelay(m, r, c); toast(`ต่อหลอดไฟกับ COM + ${c} แล้ว`, 'success'); };
+      $('#lampNO').addEventListener('click', () => rewire('NO'));
+      $('#lampNC').addEventListener('click', () => rewire('NC'));
+      return;
+    }
     const hint = m.behavior.servo ? 'เซอร์โวหมุนตามคำสั่ง Servo.write() ในโค้ด' : m.behavior.motor ? 'มอเตอร์หมุนตามขา TB6612 (ต้องต่อแบตเตอรี่ + เปิดสวิตช์ ON)' : 'โมดูลนี้เป็นเอาต์พุต: สั่งงานด้วยโค้ด';
     box.innerHTML = `<p class="muted small"><sl-icon name="info-circle"></sl-icon> ${hint}</p>`;
     return;
   }
-  box.innerHTML = '<h4>สภาพแวดล้อมจำลอง</h4>' + ctrls.map((c) => {
+  const how = PROFILE[m.key]?.label;
+  box.innerHTML = (how ? `<sl-alert variant="primary" open class="how"><sl-icon slot="icon" name="hand-index"></sl-icon><b>ทดสอบบนโมเดล 3D:</b> ${esc(how)}</sl-alert>` : '') + '<h4>สภาพแวดล้อมจำลอง</h4>' + ctrls.map((c) => {
     if (c.type === 'range') return `<div class="ctl"><div class="ctl-head"><span>${esc(c.label)}</span><output id="o_${c.id}">${m.env[c.id]}${c.unit || ''}</output></div><sl-range data-id="${c.id}" min="${c.min}" max="${c.max}" step="${c.step || 1}" value="${m.env[c.id]}"></sl-range></div>`;
     if (c.type === 'toggle') return `<sl-switch data-id="${c.id}" ${m.env[c.id] ? 'checked' : ''}>${esc(c.label)}</sl-switch>`;
     if (c.type === 'hold') return `<sl-button class="hold" data-id="${c.id}" variant="neutral" outline>${esc(c.label)}</sl-button>`;
@@ -1037,6 +1295,9 @@ function renderIssues(issues) {
 }
 
 function showTab(name) { $('#rightTabs')?.show?.(name); }
+// CodeMirror cannot measure itself while its tab is hidden: redraw whenever the code tab is shown
+$('#rightTabs').addEventListener('sl-tab-show', (e) => { if (e.detail?.name === 'code') setTimeout(() => editor?.refresh(), 0); });
+window.addEventListener('resize', () => editor?.refresh());
 
 $('#library').addEventListener('click', (e) => { const b = e.target.closest('.card'); if (b) addModule(b.dataset.key); });
 $('#placed').addEventListener('click', (e) => { const t = e.target.closest('sl-tag'); if (t) select(state.modules.find((m) => m.id === +t.dataset.id)); });
@@ -1050,7 +1311,7 @@ $('#pwSw').addEventListener('sl-change', (e) => setPower({ sw: e.target.checked 
 
 // ------------------------------------------------------------------ code editor + run
 let editor;
-function setCode(code) { if (editor) editor.setValue(code); else $('#code').value = code; save(); }
+function setCode(code) { if (editor) { editor.setValue(code); setTimeout(() => editor.refresh(), 0); } else $('#code').value = code; save(); }
 function getCode() { return editor ? editor.getValue() : $('#code').value; }
 
 function initEditor() {
@@ -1157,7 +1418,10 @@ setInterval(() => {
 function updateStatus() {
   const mt = (p) => { const s = motorSpeed(p); return !mcu.running ? '—' : !motorsOn() ? 'ไม่มีไฟแบต' : s === 0 ? 'หยุด' : `${s > 0 ? '▲' : '▼'} ${Math.round(Math.abs(s) * 255)}`; };
   const sv = [10, 11, 12].map((p, i) => `SV${i + 1} ${state.servo[p] != null ? state.servo[p] + '°' : '—'}`).join(' · ');
-  $('#hwStatus').innerHTML = `<span><sl-icon name="lightning-charge"></sl-icon>${boardOn() ? (state.power.usb ? 'USB 5V' : 'แบต 7.4V') : 'ไม่มีไฟ'}</span><span>ML ${mt('ML')}</span><span>MR ${mt('MR')}</span><span>${sv}</span><span>A7 ${Math.round(state.knob * 1023)}</span><span>D2 ${state.d2Pressed ? 'กด' : 'ปล่อย'}</span>`;
+  const r = state.rail;
+  const pct = r.limit ? Math.round((r.mA / r.limit) * 100) : 0;
+  const cls = !boardOn() ? '' : pct > 100 ? 'bad' : pct > 75 ? 'warnv' : 'okv';
+  $('#hwStatus').innerHTML = `<span class="rail ${cls}" title="กระแสที่ใช้บนราง 5V เทียบกับที่แหล่งจ่ายให้ได้"><sl-icon name="lightning-charge"></sl-icon>${boardOn() ? `${state.power.battery && state.power.sw ? 'แบต' : 'USB'} ${r.V.toFixed(2)}V · ${r.mA}/${r.limit} mA` : 'ไม่มีไฟ'}${r.resets ? ` · รีเซ็ต ${r.resets} ครั้ง` : ''}</span><span>ML ${mt('ML')}</span><span>MR ${mt('MR')}</span><span>${sv}</span><span>A7 ${Math.round(state.knob * 1023)}</span><span>D2 ${state.d2Pressed ? 'กด' : 'ปล่อย'}</span>`;
 }
 
 // ------------------------------------------------------------------ persistence
@@ -1169,7 +1433,7 @@ function save() {
       code: getCode(),
       power: state.power,
       modules: state.modules.map((m) => ({ id: m.id, key: m.key, x: m.root.position.x, z: m.root.position.z, ry: m.root.rotation.y, portMap: m.portMap })),
-      wires: state.wires.map((w) => ({ m: w.a.moduleId, pin: w.a.pin, port: w.b.port, row: w.b.row, color: w.color })),
+      wires: state.wires.map((w) => ({ m: w.a.moduleId, pin: w.a.pin, port: w.b.port, row: w.b.row, color: w.color, owner: w.b.ownerId })),
     }));
   } catch {}
 }
@@ -1189,6 +1453,11 @@ async function restore() {
   }
   for (const w of data.wires || []) {
     const m = idMap[w.m];
+    if (w.row === 'T') {
+      const relay = idMap[w.owner];
+      if (m && relay?.terms?.[w.port] && m.pins[w.pin]) addWire({ kind: 'pin', obj: m.pins[w.pin], pin: w.pin, moduleId: m.id }, { kind: 'port', obj: relay.terms[w.port], port: w.port, row: 'T', ownerId: relay.id, term: w.port }, w.color, { quiet: true });
+      continue;
+    }
     const port = state.ports.find((p) => p.port === w.port && p.row === w.row);
     if (!m || !m.pins[w.pin] || !port) continue;
     addWire({ kind: 'pin', obj: m.pins[w.pin], pin: w.pin, moduleId: m.id }, { kind: 'port', obj: port.obj, port: port.port, row: port.row }, w.color, { quiet: true });
@@ -1228,7 +1497,7 @@ const syncAppbar = () => document.documentElement.style.setProperty('--appbar-h'
 new ResizeObserver(syncAppbar).observe($('.appbar'));
 syncAppbar();
 
-window.__sim = { state, stage, mcu, oled, addModule, autoWire, runCode: () => runCode(), stop: () => stopSketch(), setCode, setPower };
+window.__sim = { state, stage, mcu, oled, voices, addModule, autoWire, addWire, removeWire, runCode: () => runCode(), stop: () => stopSketch(), setCode, setPower };
 
 (async function main() {
   await Promise.race([customElements.whenDefined('sl-button'), new Promise((r) => setTimeout(r, 3000))]);
