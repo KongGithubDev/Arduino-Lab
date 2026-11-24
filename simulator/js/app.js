@@ -111,7 +111,7 @@ async function loadBoard() {
 }
 
 // ------------------------------------------------------------------ modules
-async function addModule(key, pos) {
+async function addModule(key, pos, { auto = true } = {}) {
   const info = CATALOG.find((c) => c.key === key);
   const behavior = BEHAVIORS[key] || { env: [] };
   const root = await stage.load(MODELS + key + '.glb');
@@ -149,8 +149,15 @@ async function addModule(key, pos) {
   const spot = pos || freeSpot();
   root.position.set(spot.x, 0, spot.z);
   stage.scene.add(root);
-  const m = { id, key, info, behavior, root, pins, env, leds, dLeds, pwrLeds, light, laser, smoke: 0 };
+  const m = { id, key, info, behavior, root, pins, env, leds, dLeds, pwrLeds, light, laser, smoke: 0, portMap: {} };
   state.modules.push(m);
+  if (auto) {
+    autoWire(m, { quiet: true });
+    if (loadExample(m)) {
+      const moved = Object.entries(m.portMap).filter(([a, b]) => a !== b);
+      toast(`วาง ${info.code} แล้ว: ต่อสายและโหลดโค้ดตัวอย่างให้อัตโนมัติ` + (moved.length ? ` (ใช้ ${moved.map(([, b]) => b).join(', ')} แทน ${moved.map(([a]) => a).join(', ')} เพราะพอร์ตเดิมไม่ว่าง)` : '') + ' → กด ▶ รัน');
+    }
+  }
   select(m);
   renderModuleList();
   save();
@@ -182,17 +189,14 @@ function wireColor(a, b) {
   return SIGNAL_COLORS[used % SIGNAL_COLORS.length];
 }
 
-function addWire(a, b, color) {
-  if (a.kind === b.kind) { toast('ต่อสายจาก "ขาโมดูล" ไป "หัวต่อบนบอร์ด" เท่านั้น'); return null; }
+function addWire(a, b, color, { quiet = false } = {}) {
+  if (a.kind === b.kind) { toast('สายต้องต่อจาก "ขาโมดูล" ไป "หัวต่อบนบอร์ด" (ปลายหนึ่งที่โมดูล อีกปลายที่บอร์ด)'); return null; }
   const pin = a.kind === 'pin' ? a : b, port = a.kind === 'port' ? a : b;
-  if (state.wires.some((w) => (w.a === pin || w.b === pin) || [w.a, w.b].some((e) => e.kind === 'pin' && e.moduleId === pin.moduleId && e.pin === pin.pin))) {
-    toast('ขานี้ต่อสายไปแล้ว'); return null;
-  }
-  if (state.wires.some((w) => [w.a, w.b].some((e) => e.kind === 'port' && e.port === port.port && e.row === port.row))) {
-    toast(`${port.port} ${ROW_TH[port.row]} มีสายเสียบอยู่แล้ว`); return null;
-  }
+  const dup = state.wires.find((w) => w.a.moduleId === pin.moduleId && w.a.pin === pin.pin && w.b.port === port.port && w.b.row === port.row);
+  if (dup) { if (!quiet) toast('มีสายเส้นนี้อยู่แล้ว'); return null; }
   const w = new Wire(stage, pin, port, color || wireColor(pin, port));
   state.wires.push(w);
+  restack();
   checkWiring();
   save();
   return w;
@@ -201,8 +205,20 @@ function addWire(a, b, color) {
 function removeWire(w) {
   w.dispose();
   state.wires = state.wires.filter((x) => x !== w);
+  restack();
   checkWiring();
   save();
+}
+
+/** Several wires on one pin/slot are drawn piggy-backed (stacked further out). */
+function restack() {
+  const pinCount = {}, slotCount = {};
+  for (const w of state.wires) {
+    const pk = w.a.moduleId + ':' + w.a.pin, sk = w.b.port + ':' + w.b.row;
+    const sa = (pinCount[pk] = (pinCount[pk] ?? -1) + 1);
+    const sb = (slotCount[sk] = (slotCount[sk] ?? -1) + 1);
+    if (w.stackA !== sa || w.stackB !== sb) { w.stackA = sa; w.stackB = sb; w.update(); }
+  }
 }
 
 function moduleWires(m) {
@@ -247,16 +263,44 @@ function checkWiring() {
     if (ws.length && !powered(m) && !reverse) issues.push(['warn', `${label}: ยังไม่ได้ต่อไฟเลี้ยงครบ (5V + GND)`]);
     if (ws.length && sigPins.length && !ws.some((w) => pinRole(w.pin, m) === 'S')) issues.push(['warn', `${label}: ยังไม่ได้ต่อขาสัญญาณ`]);
   }
-  // two signals on one port
+  // several wires on the same signal slot = those pins are connected together
   const byPort = {};
   for (const w of state.wires) { if (w.b.row === 'S') (byPort[w.b.port] ||= []).push(w); }
+  for (const [port, ws] of Object.entries(byPort)) {
+    const mods = new Set(ws.map((w) => w.a.moduleId));
+    if (ws.length > 1) issues.push([mods.size > 1 ? 'warn' : 'info', `พอร์ต ${port} ช่องขาวมีสาย ${ws.length} เส้น: สัญญาณของ ${[...mods].map((id) => state.modules.find((m) => m.id === id)?.info.code).join(', ')} จะต่อถึงกัน`]);
+  }
   const list = $('#issues');
   list.innerHTML = issues.length ? issues.map(([k, t]) => `<li class="${k}">${t}</li>`).join('') : '<li class="ok">การต่อสายถูกต้อง</li>';
 }
 
-function autoWire(m) {
+const SIGNAL_PORT_ORDER = ['A0', 'A1', 'A2', 'A3', 'A6', 'SV1', 'SV2', 'SV3', 'A4', 'A5', 'D3', 'D1', 'D0'];
+const ANALOG_PINS = ['AO', 'A0', 'VRX', 'VRY'];
+const ANALOG_ONLY_MODULES = ['photoresistor', 'analog-temperature-sensor', 'analog-hall-sensor', 'heartbeat-sensor'];
+
+/** Choose free header ports for a module: README ports when free, otherwise the next free ones. */
+function planPorts(m) {
+  const busy = new Set(state.wires.filter((w) => w.a.moduleId !== m.id && w.b.row === 'S').map((w) => w.b.port));
+  const map = {};
+  const sigs = (m.info.wires || []).filter((w) => w.role === 'S' && !w.optional);
+  for (const w of sigs) {
+    if (map[w.port]) continue;
+    const analog = ANALOG_PINS.includes(w.pin.toUpperCase()) || ANALOG_ONLY_MODULES.includes(m.key);
+    const ok = (p) => !busy.has(p) && (p !== 'A6' || analog) && !(p.startsWith('SV') && analog);
+    const port = ok(w.port) ? w.port : SIGNAL_PORT_ORDER.find(ok);
+    if (!port) continue;
+    map[w.port] = port;
+    busy.add(port);
+  }
+  return map;
+}
+
+function autoWire(m, { quiet = false } = {}) {
   for (const w of [...state.wires]) if (w.a.moduleId === m.id) removeWire(w);
-  const wanted = m.info.wires || [];
+  const portMap = planPorts(m);
+  const firstSig = (m.info.wires || []).filter((w) => w.role === 'S').sort((a, b) => a.optional - b.optional)[0];
+  const powerCol = firstSig ? portMap[firstSig.port] || firstSig.port : 'A0';
+  const wanted = (m.info.wires || []).filter((w) => !w.optional).map((w) => ({ ...w, port: w.role === 'S' ? portMap[w.port] || w.port : powerCol }));
   const used = new Set();
   const signalPool = Object.keys(m.pins).filter((p) => pinRole(p, m) === 'S');
   const sorted = [...wanted].sort((a, b) => (a.optional - b.optional) || ((a.role !== 'S') - (b.role !== 'S')));
@@ -275,9 +319,49 @@ function autoWire(m) {
     used.add(pin);
     const a = { kind: 'pin', obj: m.pins[pin], pin, moduleId: m.id };
     const b = { kind: 'port', obj: port.obj, port: port.port, row: port.row };
-    if (addWire(a, b)) n++;
+    if (addWire(a, b, null, { quiet: true })) n++;
   }
-  toast(`ต่อสายอัตโนมัติ ${n} เส้น ตามตารางในเอกสาร`);
+  m.portMap = portMap;
+  const moved = Object.entries(portMap).filter(([a, b]) => a !== b);
+  if (!quiet) toast(`ต่อสายอัตโนมัติ ${n} เส้น` + (moved.length ? ` (ย้าย ${moved.map(([a, b]) => a + '→' + b).join(', ')} เพราะพอร์ตเดิมมีโมดูลอื่นใช้อยู่)` : ' ตามตารางในเอกสาร'));
+  return portMap;
+}
+
+// ---- example code with pins remapped to the ports actually used
+const PORT_NUM = { A0: 14, A1: 15, A2: 16, A3: 17, A4: 18, A5: 19, A6: 20, SV1: 10, SV2: 11, SV3: 12, D3: 3, D1: 1, D0: 0 };
+function remapCode(code, portMap = {}) {
+  const pairs = Object.entries(portMap).filter(([a, b]) => a !== b);
+  if (!pairs.length) return code;
+  const label = (p) => p;
+  const codeTokens = [], noteTokens = [];
+  for (const [from, to] of pairs) {
+    if (from.startsWith('A')) codeTokens.push([new RegExp(`\\b${from}\\b`, 'g'), to.startsWith('A') ? to : String(PORT_NUM[to])]);
+    codeTokens.push([new RegExp(`\\b${PORT_NUM[from]}\\b`, 'g'), String(PORT_NUM[to])]);
+    noteTokens.push([new RegExp(`\\b${from}\\b`, 'g'), label(to)]);
+    noteTokens.push([new RegExp(`\\bD${PORT_NUM[from]}\\b`, 'g'), 'D' + PORT_NUM[to]]);
+    noteTokens.push([new RegExp(`\\b${PORT_NUM[from]}\\b`, 'g'), String(PORT_NUM[to])]);
+  }
+  const swap = (text, tokens) => {
+    const marks = [];
+    for (const [re, to] of tokens) text = text.replace(re, () => { marks.push(to); return `\u0001${marks.length - 1}\u0001`; });
+    return text.replace(/\u0001(\d+)\u0001/g, (_, i) => marks[+i]);
+  };
+  const isPinLine = (l) => /^\s*#\s*define\s+\w+\s/.test(l) || /\b(?:const\s+)?(?:int|byte|uint8_t)\s+\w*(?:pin|PIN|Pin)\w*\s*=/.test(l);
+  return code.split('\n').map((line) => {
+    const i = line.indexOf('//');
+    const codePart = i < 0 ? line : line.slice(0, i);
+    const note = i < 0 ? '' : line.slice(i);
+    const isComment = /^\s*$/.test(codePart) && note;
+    if (!isPinLine(codePart) && !isComment) return line;
+    return (isPinLine(codePart) ? swap(codePart, codeTokens) : codePart) + (note ? swap(note, noteTokens) : '');
+  }).join('\n');
+}
+
+function loadExample(m, idx = 0) {
+  const ex = m.info.examples[idx];
+  if (!ex) return false;
+  setCode(remapCode(ex.code, m.portMap));
+  return true;
 }
 
 // ------------------------------------------------------------------ electrical model shared with the MCU
@@ -473,13 +557,29 @@ canvas.addEventListener('pointermove', (e) => {
 canvas.addEventListener('pointerdown', (e) => {
   if (e.button === 2) return;
   audio?.resume?.();
+  // grab the Dupont housing of an existing wire -> unplug that end and move it
+  if (!state.pending) {
+    const hh = stage.pick(e, state.wires.flatMap((w) => [w.h1, w.h2]))[0];
+    if (hh) {
+      const { wire, end } = hh.object.userData.plug;
+      const keep = end === 'a' ? wire.b : wire.a;
+      state.pendingColor = wire.color;
+      removeWire(wire);
+      state.pending = keep;
+      toast(end === 'a' ? 'ถอดปลายฝั่งโมดูลแล้ว: คลิกขาโมดูลที่จะเสียบใหม่ (Esc = ทิ้งสาย)' : 'ถอดปลายฝั่งบอร์ดแล้ว: คลิกช่องบนหัวต่อที่จะเสียบใหม่ (Esc = ทิ้งสาย)');
+      stage.controls.enabled = false;
+      setTimeout(() => (stage.controls.enabled = true), 0);
+      return;
+    }
+  }
   const anchors = stage.pick(e, anchorsList());
   if (anchors.length) {
     const an = anchors[0].object.userData.anchor;
     if (!state.pending) { state.pending = an; toast(an.kind === 'port' ? `เลือก ${an.port} ${ROW_TH[an.row]} แล้ว: คลิกขาโมดูลปลายทาง` : `เลือกขา ${an.pin} แล้ว: คลิกหัวต่อบนบอร์ดปลายทาง (ช่องขาว/แดง/ดำ)`); }
     else {
-      if (an !== state.pending) addWire(state.pending, an);
+      if (an !== state.pending) addWire(state.pending, an, state.pendingColor);
       state.pending = null;
+      state.pendingColor = null;
       ghost.geometry.dispose(); ghost.geometry = new THREE.BufferGeometry();
     }
     stage.controls.enabled = false;
@@ -559,7 +659,7 @@ function select(m) {
     <div id="envBox"></div>`;
   $('#btnAuto').onclick = () => autoWire(m);
   $('#btnRemove').onclick = () => removeModule(m);
-  $('#btnLoadEx').onclick = () => { const e = m.info.examples[+$('#exSel').value]; if (e) { setCode(e.code); toast('โหลดโค้ดตัวอย่างแล้ว: กด ▶ รัน'); } };
+  $('#btnLoadEx').onclick = () => { if (loadExample(m, +$('#exSel').value)) toast('โหลดโค้ดตัวอย่างแล้ว (ปรับเลขขาตามพอร์ตที่ต่อจริง): กด ▶ รัน'); };
   renderEnv(m);
 }
 
@@ -722,7 +822,7 @@ async function restore() {
   setCode(data.code || BOARD_EXAMPLES[0].code);
   const idMap = {};
   for (const s of data.modules || []) {
-    const m = await addModule(s.key, { x: s.x, z: s.z });
+    const m = await addModule(s.key, { x: s.x, z: s.z }, { auto: false });
     m.root.rotation.y = s.ry || 0;
     idMap[s.id] = m;
   }

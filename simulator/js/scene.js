@@ -179,16 +179,19 @@ export class Wire {
     this.mat = new THREE.MeshPhysicalMaterial({ color, roughness: 0.38, clearcoat: 0.4 });
     this.housingMat = new THREE.MeshStandardMaterial({ color: 0x121212, roughness: 0.5 });
     this.mesh = null;
-    this.h1 = this.housing();
-    this.h2 = this.housing();
+    this.stackA = 0; // how many other wires already sit on the same pin / slot
+    this.stackB = 0;
+    this.h1 = this.housing('a');
+    this.h2 = this.housing('b');
     this.group.add(this.h1, this.h2);
     stage.scene.add(this.group);
     this.update();
   }
 
-  housing() {
+  housing(end) {
     const m = new THREE.Mesh(new THREE.BoxGeometry(0.0026, 0.014, 0.0026), this.housingMat);
     m.castShadow = true;
+    m.userData.plug = { wire: this, end }; // click a housing to unplug and move that end
     return m;
   }
 
@@ -210,15 +213,17 @@ export class Wire {
 
   update() {
     const A = this.endInfo(this.a), B = this.endInfo(this.b);
-    const place = (h, info) => {
-      // housing sits over the pin, body extends away from the pin tip
+    const place = (h, info, stack) => {
+      // housing sits over the pin, body extends away from the pin tip;
+      // extra wires on the same pin are stacked (piggy-back Dupont) further out
+      info.p.addScaledVector(info.dir, stack * 0.0145);
       const c = info.p.clone().addScaledVector(info.dir, 0.007 - 0.004);
       h.position.copy(c);
       h.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), info.dir);
       return info.p.clone().addScaledVector(info.dir, 0.0105);
     };
-    const a1 = place(this.h1, A);
-    const b1 = place(this.h2, B);
+    const a1 = place(this.h1, A, this.stackA);
+    const b1 = place(this.h2, B, this.stackB);
     const dist = a1.distanceTo(b1);
     const sag = Math.min(0.05, 0.012 + dist * 0.25);
     const pts = [
