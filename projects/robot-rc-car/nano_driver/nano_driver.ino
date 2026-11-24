@@ -15,6 +15,11 @@
 volatile char cmdBuffer[16];
 volatile bool newCmdReceived = false;
 
+// Failsafe: stop the motors if no command arrives within this time
+// (the web page repeats the command every 200 ms while a button is held)
+const unsigned long CMD_TIMEOUT_MS = 500;
+unsigned long lastCmdTime = 0;
+
 void setup() {
   // I2C Slave (Address 8)
   Wire.begin(8);
@@ -32,8 +37,19 @@ void setup() {
 
 void loop() {
   if (newCmdReceived) {
-    processCommand(String((char *)cmdBuffer));
+    char local[16];
+    noInterrupts();  // copy the buffer before the next I2C message can overwrite it
+    strncpy(local, (const char *)cmdBuffer, sizeof(local));
     newCmdReceived = false;
+    interrupts();
+    local[15] = '\0';
+    processCommand(String(local));
+    lastCmdTime = millis();
+  }
+
+  if (lastCmdTime != 0 && millis() - lastCmdTime > CMD_TIMEOUT_MS) {
+    stopCar();
+    lastCmdTime = 0;
   }
 }
 

@@ -71,17 +71,36 @@ const char *INDEX_HTML PROGMEM = R"rawliteral(
     <p>รถบังคับผ่านเว็บ</p>
 
     <div class="d-pad">
-        <button class="btn btn-up"    ontouchstart="send('F')" ontouchend="send('S')" onmousedown="send('F')" onmouseup="send('S')">&#9650;</button>
-        <button class="btn btn-left"  ontouchstart="send('L')" ontouchend="send('S')" onmousedown="send('L')" onmouseup="send('S')">&#9664;</button>
+        <button class="btn btn-up"    data-cmd="F">&#9650;</button>
+        <button class="btn btn-left"  data-cmd="L">&#9664;</button>
         <button class="btn btn-stop"  onclick="send('S')">STOP</button>
-        <button class="btn btn-right" ontouchstart="send('R')" ontouchend="send('S')" onmousedown="send('R')" onmouseup="send('S')">&#9654;</button>
-        <button class="btn btn-down"  ontouchstart="send('B')" ontouchend="send('S')" onmousedown="send('B')" onmouseup="send('S')">&#9660;</button>
+        <button class="btn btn-right" data-cmd="R">&#9654;</button>
+        <button class="btn btn-down"  data-cmd="B">&#9660;</button>
     </div>
 
     <script>
         function send(cmd) {
             fetch('/cmd?c=' + cmd).catch(() => {});
         }
+
+        // Pointer Events: one handler for mouse and touch, so a tap does not
+        // send the command twice (touch + emulated mouse) out of order.
+        let holdTimer = null;
+        document.querySelectorAll('[data-cmd]').forEach(btn => {
+            const cmd = btn.dataset.cmd;
+            btn.addEventListener('pointerdown', e => {
+                e.preventDefault();
+                btn.setPointerCapture(e.pointerId);
+                send(cmd);
+                // keep-alive: the Nano stops by itself if no command arrives for 500 ms
+                clearInterval(holdTimer);
+                holdTimer = setInterval(() => send(cmd), 200);
+            });
+            const release = () => { clearInterval(holdTimer); holdTimer = null; send('S'); };
+            btn.addEventListener('pointerup', release);
+            btn.addEventListener('pointercancel', release);
+            btn.addEventListener('contextmenu', e => e.preventDefault());
+        });
     </script>
 </body>
 </html>
@@ -96,9 +115,15 @@ void setup() {
   WiFi.begin(ssid, password);
 
   Serial.print("Connecting WiFi");
+  unsigned long start = millis();
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
+    if (millis() - start > 20000) {  // 20 s: wrong SSID/password or no signal
+      Serial.println();
+      Serial.println("WiFi failed - check ssid/password, restarting...");
+      ESP.restart();
+    }
   }
   Serial.println();
   Serial.print("IP: ");
@@ -113,9 +138,13 @@ void setup() {
       String c = server.arg("c");
       Wire.beginTransmission(NANO_I2C_ADDR);
       Wire.print(c);
-      Wire.endTransmission();
-      Serial.println("CMD: " + c);
-      server.send(200, "text/plain", "OK");
+      byte err = Wire.endTransmission();  // 0 = success
+      Serial.println("CMD: " + c + (err ? " (I2C error " + String(err) + ")" : ""));
+      if (err) {
+        server.send(500, "text/plain", "I2C error - check SDA/SCL/GND wiring");
+      } else {
+        server.send(200, "text/plain", "OK");
+      }
     } else {
       server.send(400, "text/plain", "Bad Request");
     }

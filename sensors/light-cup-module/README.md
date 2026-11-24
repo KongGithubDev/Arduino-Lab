@@ -2,54 +2,55 @@
 
 ## รายละเอียด
 
-Light Cup Module เป็นโมดูลประกอบด้วย Photoresistor (LDR) อยู่ภายในถ้วยสีดำ เพื่อป้องกันแสงรบกวนจากด้านข้าง ใช้ตรวจจับแสงที่ตกกระทบจากด้านบนโดยตรง
+Magic Light Cup Module เป็นโมดูลที่ประกอบด้วย **สวิตช์เอียงแบบปรอท (Mercury Tilt Switch)** และ **LED** อยู่บนแผงเดียวกัน สวิตช์เอียงจะปิดวงจรหรือเปิดวงจรตามมุมเอียงของโมดูล ส่วน LED สามารถสั่งเปิด-ปิดได้จาก Arduino นิยมใช้ 2 โมดูลคู่กันเพื่อทำเอฟเฟกต์ "ถ่ายเทแสง" เหมือนเทน้ำจากถ้วยหนึ่งไปอีกถ้วยหนึ่ง
 
 ## คุณสมบัติ
 
 - แรงดันไฟฟ้า: 3.3V - 5V DC
-- เอาต์พุต: Digital (DO) และ Analog (AO)
-- มีตัวปรับความไว (Potentiometer) ในตัว
-- ถ้วยสีดำช่วยลดแสงรบกวน
+- อินพุต: สวิตช์เอียงแบบปรอท ให้สัญญาณ Digital (HIGH/LOW) ที่ขา S
+- เอาต์พุต: LED ควบคุมผ่านขา L (Digital หรือ PWM)
+- มี 4 ขา: G, +, S, L
+
+> **⚠️ หมายเหตุ:** สวิตช์ปรอทมีสารปรอทอยู่ภายในหลอดแก้ว ห้ามทำหลอดแตก หากแตกให้แจ้งครูทันที
 
 ## ขาของโมดูล
 
 | ขา (Module) | สีสาย | เชื่อมต่อกับ (Lotus Nano Bot) |
 |-------------|-------|------------------------------|
-| VCC         | แดง   | 5V                           |
-| GND         | ดำ/น้ำตาล | GND                       |
-| DO (Digital)| เหลือง | D3 หรือ A0 (D14)          |
-| AO (Analog) | ขาว   | A0, A1, A2, A3 หรือ A6     |
+| G (GND)     | ดำ/น้ำตาล | GND                       |
+| + (VCC)     | แดง   | 5V                           |
+| S (Tilt)    | เหลือง | A1 (D15)                    |
+| L (LED)     | ขาว   | A0 (D14)                    |
 
-> **หมายเหตุ:** บน Lotus Nano Bot พอร์ต Digital ภายนอกมี D0, D1, D3 โดย D0/D1 ใช้กับ Bluetooth/Serial ส่วน D3 ใช้กับบัซเซอร์บนบอร์ด หากต้องการพอร์ต Digital เพิ่มสามารถใช้ A0-A3 เป็น Digital ได้ (A0=Pin14, A1=Pin15, A2=Pin16, A3=Pin17)
+> **หมายเหตุ:** บน Lotus Nano Bot พอร์ต Digital ภายนอกมี D0, D1, D3 โดย D0/D1 ใช้กับ Bluetooth/Serial ส่วน D3 ใช้กับบัซเซอร์บนบอร์ด จึงใช้ A0-A3 เป็น Digital แทน (A0=Pin14, A1=Pin15, A2=Pin16, A3=Pin17) หากต้องการหรี่ไฟ LED ด้วย PWM ต้องต่อ L ที่ D3 ซึ่งจะทำให้บัซเซอร์บนบอร์ดมีเสียงด้วย
 
 ## การต่อสายไฟ
 
 ```
 Light Cup Module         Lotus Nano Bot
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-VCC  ──────────────────► 5V
-GND  ──────────────────► GND
-DO   ──────────────────► D3 หรือ A0 (D14)
-AO   ──────────────────► A0 (optional)
+G    ──────────────────► GND
++    ──────────────────► 5V
+S    ──────────────────► A1 (D15)
+L    ──────────────────► A0 (D14)
 ```
 
 ### ภาพการต่อสาย (Text Diagram)
 
 ```
         +------------------+
-        |    Light Cup     |
-        |    Module        |
-        |   (  LDR  )      |
-        |    \   /         |
+        |  Magic Light Cup |
+        |  [Hg Tilt] (LED) |
+        |                  |
    +----+----+   +----+----+   +----+----+   +----+----+
-   |  VCC    |   |  GND    |   |  DO     |   |  AO     |
-   |   (+)   |   |   (-)   |   | (Digi)  |   | (Anlg)  |
+   |   G     |   |   +     |   |   S     |   |   L     |
+   |   (-)   |   |  (VCC)  |   | (Tilt)  |   |  (LED)  |
    +----+----+   +----+----+   +----+----+   +----+----+
         |             |             |             |
         |             |             |             |
    +----+----+   +----+----+   +----+----+   +----+----+
-   |   5V    |   |  GND    |   |   D3    |   |   A0    |
-   |         |   |         |   |         |   |         |
+   |  GND    |   |   5V    |   |   A1    |   |   A0    |
+   |         |   |         |   |  (D15)  |   |  (D14)  |
    |  Lotus  |   |  Nano   |   |  Bot    |   |         |
    +---------+   +---------+   +---------+   +---------+
 ```
@@ -57,77 +58,119 @@ AO   ──────────────────► A0 (optional)
 ## โค้ดตัวอย่าง
 
 ```cpp
-// Light Cup Module Example for Lotus Nano Bot
-// DO -> D3, AO -> A0
+// Magic Light Cup Example for Lotus Nano Bot
+// S -> A1 (D15), L -> A0 (D14)
 
-#define LIGHT_CUP_DIGITAL_PIN 3  // หรือ 14 (A0)
-#define LIGHT_CUP_ANALOG_PIN A0
-#define LED_PIN 13
+#define TILT_PIN 15     // A1
+#define CUP_LED_PIN 14  // A0
 
 void setup() {
   Serial.begin(9600);
-  pinMode(LIGHT_CUP_DIGITAL_PIN, INPUT);
-  pinMode(LED_PIN, OUTPUT);
-  Serial.println("Light Cup Module Test Started");
+  pinMode(TILT_PIN, INPUT_PULLUP);  // เปิด Pull-up ภายในกันขาลอย
+  pinMode(CUP_LED_PIN, OUTPUT);
+  Serial.println("Magic Light Cup Test Started");
 }
 
 void loop() {
-  int digitalValue = digitalRead(LIGHT_CUP_DIGITAL_PIN);
-  int analogValue = analogRead(LIGHT_CUP_ANALOG_PIN);
+  int tiltState = digitalRead(TILT_PIN);
   
-  Serial.print("Digital: ");
-  Serial.print(digitalValue);
-  Serial.print(" | Analog: ");
-  Serial.println(analogValue);
+  Serial.print("Tilt: ");
+  Serial.println(tiltState);
   
-  // Digital: ปกติ HIGH, เมื่อแสงน้อยเกินเกณฑ์จะเป็น LOW
-  if (digitalValue == LOW) {
-    Serial.println("🌑 Dark Detected!");
-    digitalWrite(LED_PIN, HIGH);
+  // ทิศทาง HIGH/LOW ขึ้นกับการวางโมดูล ให้ทดลองเอียงแล้วสังเกต
+  if (tiltState == LOW) {
+    Serial.println("🔽 Tilted (switch closed)");
+    digitalWrite(CUP_LED_PIN, HIGH);
   } else {
-    Serial.println("💡 Light Present");
-    digitalWrite(LED_PIN, LOW);
+    Serial.println("🔼 Upright (switch open)");
+    digitalWrite(CUP_LED_PIN, LOW);
   }
   
   delay(200);
 }
 ```
 
-## โค้ดตัวอย่างอ่านค่า Lux ประมาณ
+## โค้ดตัวอย่างนับจำนวนครั้งที่เอียง
 
 ```cpp
-// แปลงค่า Analog เป็นค่าความสว่างโดยประมาณ
-#define LIGHT_CUP_PIN A0
+// นับจำนวนครั้งที่เอียงโมดูล พร้อมกันการเด้งของสวิตช์ (Debounce)
+#define TILT_PIN 15     // A1
+#define CUP_LED_PIN 14  // A0
+
+int count = 0;
+int lastState = HIGH;
+unsigned long lastChange = 0;
 
 void setup() {
   Serial.begin(9600);
+  pinMode(TILT_PIN, INPUT_PULLUP);
+  pinMode(CUP_LED_PIN, OUTPUT);
 }
 
 void loop() {
-  int rawValue = analogRead(LIGHT_CUP_PIN);
+  int state = digitalRead(TILT_PIN);
   
-  // ค่ายิ่งต่ำ = แสงยิ่งน้อย, ค่ายิ่งสูง = แสงยิ่งมาก
-  float brightnessPercent = map(rawValue, 0, 1023, 0, 100);
-  
-  Serial.print("Raw: ");
-  Serial.print(rawValue);
-  Serial.print(" | Brightness: ");
-  Serial.print(brightnessPercent);
-  Serial.println("%");
-  
-  delay(500);
+  // ปรอทกระฉอกทำให้สัญญาณเด้ง จึงรับการเปลี่ยนสถานะห่างกันอย่างน้อย 100 ms
+  if (state != lastState && millis() - lastChange > 100) {
+    lastChange = millis();
+    lastState = state;
+    
+    if (state == LOW) {
+      count++;
+      Serial.print("Tilt Count: ");
+      Serial.println(count);
+    }
+    digitalWrite(CUP_LED_PIN, state == LOW ? HIGH : LOW);
+  }
 }
 ```
 
 ## หมายเหตุ
 
-- หมุนตัวปรับค่าให้ LED บนโมดูลเปลี่ยนสถานะตรงจุดที่ต้องการ
-- ถ้วยสีดำช่วยให้เซนเซอร์ตอบสนองเฉพาะแสงจากด้านบน
-- เหมาะสำหรับใช้ตรวจจับวัตถุที่ผ่านเข้ามาบดบังแสง
+- สวิตช์ปรอทให้สัญญาณเพียง 2 สถานะ (เอียง/ไม่เอียง) ไม่ได้บอกมุมเอียงที่แน่นอน
+- สัญญาณอาจเด้ง (Bounce) ขณะเอียง ควรใช้การหน่วงเวลาหรือ Debounce
+- ใช้ 2 โมดูลคู่กัน (ต่อ S/L ของโมดูลที่สองที่ A2/A3) เพื่อทำเอฟเฟกต์ถ่ายเทแสงระหว่างถ้วย
+- ขา L ต่อกับ LED ผ่านตัวต้านทานบนโมดูลแล้ว สั่งด้วย digitalWrite ได้โดยตรง
+
+## กิจกรรมการเรียนรู้
+
+### จุดประสงค์การเรียนรู้
+1. อธิบายหลักการทำงานของสวิตช์เอียงแบบปรอทได้
+2. ต่อวงจร Magic Light Cup (S → A1, L → A0) อ่านสถานะการเอียงและควบคุม LED บนโมดูลได้
+3. อธิบายปัญหาการเด้งของสวิตช์และแก้ไขด้วยวิธี Debounce ได้
+
+### ขั้นตอนการทดลอง
+1. ต่อสาย G → GND, + → 5V, S → A1, L → A0 แล้วอัปโหลดโค้ดตัวอย่างแรก
+2. วางโมดูลตั้งตรงแล้วค่อยๆ เอียงไปทางซ้าย/ขวา บันทึกค่า Tilt และสถานะ LED
+3. อัปโหลดโค้ดนับจำนวนครั้ง เอียงโมดูล 10 ครั้ง บันทึกค่า Count
+4. ลบเงื่อนไข `millis() - lastChange > 100` ออกชั่วคราว แล้วเอียง 10 ครั้งอีกรอบ เปรียบเทียบค่าที่นับได้
+
+### ตารางบันทึกผล
+| ครั้งที่ | สภาวะ/การกระทำ | ค่าที่อ่านได้ | ผลที่สังเกตได้ |
+|---|---|---|---|
+| 1 | วางโมดูลตั้งตรง | | |
+| 2 | เอียงโมดูลประมาณ 90° | | |
+| 3 | เอียง 10 ครั้ง (มี / ไม่มี Debounce) | | |
+
+### คำถามท้ายการทดลอง
+1. สวิตช์เอียงแบบปรอทเปิด-ปิดวงจรได้อย่างไร
+2. เมื่อไม่มี Debounce ค่าที่นับได้ต่างจากจำนวนครั้งที่เอียงจริงอย่างไร เพราะเหตุใด
+3. จะนำสวิตช์เอียงไปใช้ตรวจจับหุ่นยนต์ล้มได้อย่างไร
+
+<details>
+<summary>แนวคำตอบ (สำหรับครู)</summary>
+
+1. ภายในหลอดแก้วมีหยดปรอทซึ่งนำไฟฟ้า เมื่อเอียงไปทางขั้วไฟฟ้า ปรอทจะไหลไปเชื่อมขั้วทั้งสองทำให้วงจรปิด เมื่อเอียงกลับปรอทไหลออกวงจรจึงเปิด
+2. นับได้มากกว่าความจริง เพราะปรอทกระฉอกทำให้สัญญาณเปลี่ยนไปมาหลายครั้งในเสี้ยววินาที (Bounce)
+3. ติดโมดูลบนตัวหุ่นยนต์ในแนวที่สวิตช์เปิดเมื่อตั้งตรง ถ้าหุ่นล้ม สถานะจะเปลี่ยน ให้โปรแกรมหยุดมอเตอร์และส่งเสียงเตือน
+
+</details>
+
+### ภารกิจท้าทาย
+- ติดโมดูลบนหุ่นยนต์เป็น "เซนเซอร์ตรวจจับการล้ม" เมื่อเอียงให้หยุดมอเตอร์ทั้งสองข้างทันที บัซเซอร์ D3 ส่งเสียงเตือน แสดงข้อความ "FALL!" บนจอ OLED และต้องกดปุ่ม D2 เพื่อให้หุ่นเริ่มทำงานใหม่
 
 ## รูปภาพ
 
 ![light-cup-module](../../assets/images/light-cup-module.jpg)
 
 ![light-cup-module-wiring](../../assets/diagrams/light-cup-module-wiring.png)
-

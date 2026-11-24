@@ -8,25 +8,25 @@ Two-color LED Module เป็นโมดูล LED 2 สี (มักเป�
 
 - แรงดันไฟฟ้า: 3.3V - 5V DC
 - สี: Red และ Green (ผสมได้ Orange)
-- ควบคุมด้วย PWM หรือ Digital
+- ควบคุมด้วย Digital (บน Lotus Nano Bot ใช้ A0-A3) หรือ PWM/Software PWM
 - มีตัวต้านทานจำกัดกระแสในตัว
 
 ## ขาของโมดูล
 
 | ขา (Module) | สีสาย | เชื่อมต่อกับ (Lotus Nano Bot) |
 |-------------|-------|------------------------------|
-| VCC หรือ - | แดง   | 5V หรือ GND (ขึ้นอยู่กับรุ่น) |
-| R (Red)     | เหลือง | D3 หรือ D5/D6/D9 (PWM)     |
-| G (Green)   | เขียว | D3 หรือ D5/D6/D9 (PWM)     |
+| - (Common)  | ดำ    | GND (Common Cathode) หรือ 5V (Common Anode) |
+| R (Red)     | เหลือง | A0 (D14)                    |
+| G (Green)   | เขียว | A1 (D15)                    |
 
 ## การต่อสายไฟ (Common Cathode)
 
 ```
 Two-color LED            Lotus Nano Bot
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-VCC (-) ───────────────► GND
-R ─────────────────────► D5 (PWM)
-G ─────────────────────► D6 (PWM)
+- (Common) ─────────────► GND
+R ─────────────────────► A0 (D14)
+G ─────────────────────► A1 (D15)
 ```
 
 ### ภาพการต่อสาย (Text Diagram)
@@ -39,12 +39,12 @@ G ─────────────────────► D6 (PWM)
         |                  |
    +----+----+   +----+----+   +----+----+
    |  VCC    |   |   R     |   |   G     |
-   |   (-)   |   |  (PWM)  |   |  (PWM)  |
+   |   (-)   |   |  (Dig)  |   |  (Dig)  |
    +----+----+   +----+----+   +----+----+
         |             |             |
         |             |             |
    +----+----+   +----+----+   +----+----+
-   |  GND    |   |   D5    |   |   D6    |
+   |  GND    |   |   A0    |   |   A1    |
    |         |   |         |   |         |
    |  Lotus  |   |  Nano   |   |  Bot    |
    +---------+   +---------+   +---------+
@@ -54,10 +54,10 @@ G ─────────────────────► D6 (PWM)
 
 ```cpp
 // Two-color LED Example for Lotus Nano Bot
-// R->D5, G->D6
+// R->A0 (D14), G->A1 (D15)
 
-#define RED_PIN 5
-#define GREEN_PIN 6
+#define RED_PIN 14    // A0
+#define GREEN_PIN 15  // A1
 
 void setup() {
   Serial.begin(9600);
@@ -89,11 +89,13 @@ void loop() {
 }
 ```
 
-## โค้ดตัวอย่าง PWM (ปรับความสว่าง)
+## โค้ดตัวอย่าง Software PWM (ปรับความสว่าง)
+
+ขา A0/A1 ไม่ใช่ขา PWM (`analogWrite()` จะได้แค่ติด/ดับ) จึงใช้ Software PWM สลับขาเร็ว ๆ ในโค้ดแทน
 
 ```cpp
-#define RED_PIN 5
-#define GREEN_PIN 6
+#define RED_PIN 14    // A0
+#define GREEN_PIN 15  // A1
 
 void setup() {
   pinMode(RED_PIN, OUTPUT);
@@ -102,17 +104,24 @@ void setup() {
 
 void loop() {
   // ไล่สีจากแดงไปเขียว
-  for (int i = 0; i <= 255; i++) {
-    analogWrite(RED_PIN, 255 - i);
-    analogWrite(GREEN_PIN, i);
-    delay(20);
+  for (int i = 0; i <= 255; i += 5) {
+    softPWM(255 - i, i, 20);
   }
-  
+
   // ไล่สีจากเขียวไปแดง
-  for (int i = 0; i <= 255; i++) {
-    analogWrite(RED_PIN, i);
-    analogWrite(GREEN_PIN, 255 - i);
-    delay(20);
+  for (int i = 0; i <= 255; i += 5) {
+    softPWM(i, 255 - i, 20);
+  }
+}
+
+// สลับขาเร็ว ๆ เพื่อจำลองความสว่าง 0-255 (~400 Hz)
+void softPWM(int red, int green, int durationMs) {
+  unsigned long start = millis();
+  while (millis() - start < (unsigned long)durationMs) {
+    for (int t = 0; t < 255; t++) {
+      digitalWrite(RED_PIN, t < red);
+      digitalWrite(GREEN_PIN, t < green);
+    }
   }
 }
 ```
@@ -120,10 +129,48 @@ void loop() {
 ## หมายเหตุ
 
 - ตรวจสอบว่าเป็น Common Cathode หรือ Common Anode
-- Common Cathode: VCC -> GND, R/G -> PWM HIGH
-- Common Anode: VCC -> 5V, R/G -> PWM LOW
-- บน Lotus Nano Bot ใช้ D5, D6, D9 สำหรับ PWM (แต่เป็นขามอเตอร์/เซอร์โว)
-- ใช้ D3 ได้แต่ต้องระวังเพราะต่อกับบัซเซอร์
+- Common Cathode: ขาร่วม -> GND, R/G = HIGH ติด
+- Common Anode: ขาร่วม -> 5V, R/G = LOW ติด
+- **เรื่อง PWM:** Arduino Nano มีขา PWM เพียง D3, D5, D6, D9, D10, D11 แต่บน Lotus Nano Bot ขา D5/D6/D9 ใช้กับมอเตอร์ และ D10/D11 ใช้กับเซอร์โว (Servo library ยังปิด PWM ของ D9/D10 ด้วย) จึงเหลือ D3 เพียงขาเดียวที่ว่าง (ซึ่งต่อกับบัซเซอร์ในตัว อาจมีเสียงหวีดเมื่อใช้ PWM)
+- ขา A0-A3 ไม่ใช่ขา PWM ถ้าใช้ `analogWrite()` จะได้แค่ดับ (ค่า < 128) หรือติดเต็ม (ค่า ≥ 128) เท่านั้น จึงควรใช้ `digitalWrite()` หรือ Software PWM ตามตัวอย่าง
+- ห้ามต่อ LED ที่ D2 (ปุ่ม), D4-D9 (มอเตอร์) หรือ D10-D12 (เซอร์โว)
+
+## กิจกรรมการเรียนรู้
+
+### จุดประสงค์การเรียนรู้
+1. นักเรียนต่อ Two-color LED เข้ากับ A0, A1 และแสดงสีแดง เขียว ส้มด้วย `digitalWrite()` ได้
+2. นักเรียนใช้ Software PWM ปรับสัดส่วนแดง/เขียว เพื่อไล่สีจากแดงไปเขียวได้
+3. นักเรียนเปรียบเทียบผลของ `analogWrite()` บนขาที่ไม่ใช่ PWM กับ Software PWM ได้
+
+### ขั้นตอนการทดลอง
+1. ต่อสาย -→GND, R→A0, G→A1 แล้วอัปโหลดโค้ดตัวอย่างแรก บันทึกสีแต่ละช่วง
+2. อัปโหลดโค้ด Software PWM แล้วสังเกตการไล่สี
+3. แก้ `softPWM()` ให้ใช้ `analogWrite()` แทน `digitalWrite()` แล้วเปรียบเทียบผล
+4. ทดลองค่าสัดส่วน (R, G) = (255, 60), (255, 128), (128, 255) แล้วบันทึกสีที่ได้
+
+### ตารางบันทึกผล
+| ครั้งที่ | สภาวะ/การกระทำ | ค่าที่อ่านได้ | ผลที่สังเกตได้ |
+|---|---|---|---|
+| 1 | softPWM(255, 60) | | |
+| 2 | softPWM(255, 128) | | |
+| 3 | softPWM(128, 255) | | |
+
+### คำถามท้ายการทดลอง
+1. สีส้มเกิดขึ้นได้อย่างไรจาก LED เพียง 2 สี
+2. ทำไมการใช้ `analogWrite()` บน A0/A1 จึงไล่สีไม่ได้ แต่ Software PWM ทำได้
+3. ข้อเสียของ Software PWM เมื่อหุ่นยนต์ต้องทำงานอื่นพร้อมกัน เช่น อ่านเซนเซอร์ คืออะไร
+
+<details>
+<summary>แนวคำตอบ (สำหรับครู)</summary>
+
+1. แสงแดงและเขียวสว่างพร้อมกัน ตาคนรับรู้เป็นสีผสม (ส้ม/เหลือง) ขึ้นกับสัดส่วนความสว่างของแต่ละสี
+2. A0/A1 ไม่มีวงจร PWM ฮาร์ดแวร์ `analogWrite()` จึงได้แค่ 0/255 ส่วน Software PWM ให้ CPU สลับขาเองตามสัดส่วนเวลา
+3. CPU ต้องวนสลับขาตลอดเวลา (Blocking) ทำงานอื่นได้ช้าลงหรือไม่ทันเวลา
+
+</details>
+
+### ภารกิจท้าทาย
+- ใช้ Knob ในตัว (A7) ปรับสัดส่วนสีจากแดงไปเขียวแบบต่อเนื่อง (`int g = map(analogRead(A7), 0, 1023, 0, 255)`) และกดปุ่ม OK (D2) เพื่อให้บัซเซอร์ในตัว (D3) ดังบอกค่าที่เลือก
 
 ## รูปภาพ
 

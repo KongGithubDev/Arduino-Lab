@@ -2,6 +2,18 @@
 
 เอกสารและโครงสร้างสำหรับการทดลอง Arduino Sensors & Modules บน **Lotus Nano Bot**
 
+## สื่อการสอน (เริ่มที่นี่)
+
+| สำหรับ | เอกสาร |
+|-------|-------|
+| ภาพรวมหลักสูตร 8 หน่วย (30 ชั่วโมง) | [lessons/README.md](lessons/README.md) |
+| ครูผู้สอน | [คู่มือครู](lessons/teacher-guide.md) · [แบบทดสอบก่อน-หลังเรียน + เฉลย](lessons/quiz/pretest-posttest.md) |
+| นักเรียน | [ชีตสรุปพอร์ต](lessons/cheatsheet.md) · [แบบฟอร์มรายงานการทดลอง](lessons/worksheets/lab-report-template.md) · [ใบงานโปรเจกต์](lessons/worksheets/final-project-worksheet.md) |
+
+ทุกเซนเซอร์/โมดูลมีหัวข้อ **กิจกรรมการเรียนรู้** (จุดประสงค์ ขั้นตอนทดลอง ตารางบันทึกผล คำถามพร้อมแนวคำตอบ ภารกิจท้าทาย) และ **แผนผังการต่อสาย** ที่ตรงกับตารางขาในเอกสาร
+
+![แผนผังพอร์ต Lotus Nano Bot](assets/diagrams/lessons/board-port-map.png)
+
 ## รายละเอียดบอร์ด Lotus Nano Bot
 
 Lotus Nano Bot เป็นบอร์ดหุ่นยนต์อัจฉริยะที่ใช้ **Arduino Nano** เป็นตัวควบคุมหลัก พร้อมอุปกรณ์เสริมในตัว เช่น มอเตอร์ DC, เซอร์โวมอเตอร์, จอ OLED, เข็มทิศ, และบัซเซอร์
@@ -137,9 +149,16 @@ arduino-lab/
 ├── projects/                   # โปรเจกต์ตัวอย่าง
 │   └── robot-rc-car/
 │
+├── lessons/                    # สื่อการสอน: แผนการสอน 8 หน่วย, คู่มือครู,
+│   ├── unit-01 ... unit-08     #   แบบทดสอบ, ใบงาน, ชีตสรุป
+│   ├── quiz/
+│   └── worksheets/
+│
 ├── assets/
 │   ├── images/                 # รูปภาพเซนเซอร์/โมดูล
-│   └── diagrams/               # แผนผังการต่อสาย
+│   └── diagrams/               # แผนผังการต่อสาย (+ lessons/ ภาพประกอบบทเรียน)
+│
+├── tools/                      # สคริปต์สร้างภาพแผนผัง (Python + Pillow)
 │
 └── README.md                   # ไฟล์นี้
 ```
@@ -151,12 +170,13 @@ arduino-lab/
 | KY-001 | DS18B20 Temperature Sensor | Digital (OneWire) | [README](sensors/ds18b20-temperature-sensor/README.md) |
 | KY-002 | Shock / Vibration Sensor | Digital + Analog | [README](sensors/vibration-sensor/README.md) |
 | KY-003 | Hall Magnetic Sensor | Digital + Analog | [README](sensors/hall-magnetic-sensor/README.md) |
+| KY-006 | Passive Buzzer | Output (PWM / tone) | [README](sensors/passive-buzzer/README.md) |
 | KY-010 | Light Blocking Sensor | Digital + Analog | [README](sensors/light-blocking-sensor/README.md) |
 | KY-013 | Analog Temperature Sensor | Analog + Digital | [README](sensors/analog-temperature-sensor/README.md) |
-| KY-015 | DHT11 Temperature & Humidity Sensor | Digital (OneWire) | [README](sensors/temperature-humidity-sensor/README.md) |
-| KY-017 | Tilt Switch | Digital (Switch) | [README](sensors/tilt-switch/README.md) |
+| KY-015 | DHT11 Temperature & Humidity Sensor | Digital (Single-Wire) | [README](sensors/temperature-humidity-sensor/README.md) |
+| KY-017 | Mercury Tilt Switch | Digital (Switch) | [README](sensors/mercury-switch/README.md) |
 | KY-018 | Photoresistor / LDR Sensor | Analog + Digital | [README](sensors/photoresistor/README.md) |
-| KY-020 | Ball Switch / Mercury Switch | Digital (Switch) | [README](sensors/mercury-switch/README.md) |
+| KY-020 | Ball Tilt Switch | Digital (Switch) | [README](sensors/tilt-switch/README.md) |
 | KY-021 | Mini Reed / Magnetic Spring Sensor | Digital (Switch) | [README](sensors/magnetic-spring-sensor/README.md) |
 | KY-022 | IR Receiver Module | Digital | [README](sensors/ir-receiver/README.md) |
 | KY-024 | Linear Hall Sensor | Analog + Digital | [README](sensors/linear-hall-sensor/README.md) |
@@ -305,10 +325,22 @@ void loop() {
 - **avrchip.com:** [Arduino Nano Datasheet and Tutorial](http://avrchip.com/arduino-nano-datasheet-and-tutorial/)
 - **KLS Robot Center:** [Datasheet Lotus Nano](https://sites.google.com/view/klsrobotcenter2/datasheet-lotus-nano?authuser=0)
 
+## การสร้างภาพแผนผังใหม่
+
+ภาพแผนผังการต่อสายสร้างจากตาราง "การต่อสายไฟ" ใน README ของแต่ละอุปกรณ์ หากแก้ไขขาที่ใช้ ให้สร้างภาพใหม่ด้วย
+
+```bash
+pip install pillow
+python tools/generate_wiring_diagrams.py      # assets/diagrams/*-wiring.png
+python tools/generate_lesson_diagrams.py      # assets/diagrams/lessons/*.png
+```
+
+> สคริปต์ใช้ฟอนต์ Leelawadee UI / Tahoma ของ Windows สำหรับภาษาไทย
+
 ## ผู้จัดทำ
 
 เอกสารนี้จัดทำขึ้นเพื่อใช้ในการศึกษาและทดลอง Arduino Sensors & Modules บน Lotus Nano Bot
 
 ---
 
-**Last Updated:** May 2026
+**Last Updated:** November 2026

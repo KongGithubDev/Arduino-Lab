@@ -2,13 +2,15 @@
 
 ## รายละเอียด
 
-Relay Module เป็นโมดูลสวิตช์ควบคุมด้วยไฟฟ้า ใช้เปิด/ปิดวงจรไฟฟ้ากระแสสูง (220V AC) ด้วยสัญญาณจาก Arduino (5V DC) มี Optocoupler แยกวงจรควบคุมและวงจรกำลัง
+Relay Module เป็นโมดูลสวิตช์ควบคุมด้วยไฟฟ้า ใช้เปิด/ปิดวงจรไฟฟ้ากระแสสูง (220V AC) ด้วยสัญญาณจาก Arduino (5V DC) บางรุ่นมี Optocoupler แยกวงจรควบคุมและวงจรกำลัง
+
+> **⚠️ ความปลอดภัยสำหรับนักเรียน:** การทดลองในห้องเรียนให้ใช้โหลดไฟ DC แรงดันต่ำเท่านั้น (เช่น LED + ถ่าน 3-9V หรือมอเตอร์เล็ก) ห้ามต่อไฟบ้าน 220V AC เองเด็ดขาด งานที่ใช้ไฟบ้านต้องทำโดยครูหรือผู้มีความรู้ด้านไฟฟ้า และต้องไม่จับบอร์ดขณะมีไฟ
 
 ## คุณสมบัติ
 
 - แรงดันไฟฟ้าควบคุม: 5V DC
 - แรงดันไฟฟ้ารีเลย์: 10A 250V AC / 10A 30V DC
-- มี Optocoupler แยกวงจร
+- บางรุ่นมี Optocoupler แยกวงจร (KY-019 ส่วนใหญ่ใช้ทรานซิสเตอร์ขับ)
 - มี LED แสดงสถานะ
 - แบบ 1 Channel, 2 Channel, 4 Channel, 8 Channel
 
@@ -18,7 +20,7 @@ Relay Module เป็นโมดูลสวิตช์ควบคุมด�
 |-------------|-------|------------------------------|
 | VCC         | แดง   | 5V                           |
 | GND         | ดำ/น้ำตาล | GND                       |
-| IN (Signal) | เหลือง | D3 หรือ A0 (D14)          |
+| IN (Signal) | เหลือง | D3 หรือ A0-A3 (D14-D17)   |
 | NC          | -     | โหลด (Normally Closed)      |
 | NO          | -     | โหลด (Normally Open)         |
 | COM         | -     | แหล่งจ่ายไฟ AC/DC             |
@@ -56,7 +58,7 @@ IN   ──────────────────► D3
    |  Load (e.g., Lamp)                   |
    |     ──── NC                         |
    |     │                                |
-   |   COM ──── 220V AC / DC Source       |
+   |   COM ──── แหล่งจ่าย (ห้องเรียน: DC ≤ 12V) |
    |     │                                |
    |     ──── NO                         |
    +--------------------------------------+
@@ -70,20 +72,25 @@ IN   ──────────────────► D3
 
 #define RELAY_PIN 3
 
+// โมดูลแบบ Active Low: ON = LOW, OFF = HIGH
+// ถ้าเป็นแบบ Active High (KY-019 หลายรุ่น) ให้สลับเป็น ON = HIGH, OFF = LOW
+#define RELAY_ON  LOW
+#define RELAY_OFF HIGH
+
 void setup() {
   Serial.begin(9600);
   pinMode(RELAY_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, HIGH);  // เริ่มต้นปิดรีเลย์ (Active Low)
+  digitalWrite(RELAY_PIN, RELAY_OFF);  // เริ่มต้นปิดรีเลย์
   Serial.println("Relay Module Test Started");
 }
 
 void loop() {
   Serial.println("🔌 Relay ON");
-  digitalWrite(RELAY_PIN, LOW);   // Active Low
+  digitalWrite(RELAY_PIN, RELAY_ON);
   delay(3000);
-  
+
   Serial.println("🔌 Relay OFF");
-  digitalWrite(RELAY_PIN, HIGH);
+  digitalWrite(RELAY_PIN, RELAY_OFF);
   delay(3000);
 }
 ```
@@ -92,20 +99,23 @@ void loop() {
 
 ```cpp
 #define RELAY_PIN 3
+#define RELAY_ON  LOW   // Active Low (สลับถ้าเป็น Active High)
+#define RELAY_OFF HIGH
 
 void setup() {
   pinMode(RELAY_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, HIGH);  // ปิด
+  digitalWrite(RELAY_PIN, RELAY_OFF);  // ปิด
 }
 
 void loop() {
-  unsigned long hour = millis() / 1000 / 60 / 60;
-  
-  // เปิดไฟ 18:00 - 06:00 (สมมติ)
+  // Arduino ไม่มีนาฬิกาจริง ค่านี้คือ "จำนวนชั่วโมงนับจากเปิดเครื่อง" (0-23 วนรอบวัน)
+  // ถ้าเปิดเครื่องตอน 00:00 พอดี จะเปิดไฟช่วง 18:00 - 06:00 (ต้องการเวลาจริงให้ใช้โมดูล RTC)
+  unsigned long hour = (millis() / 1000UL / 60 / 60) % 24;
+
   if (hour >= 18 || hour < 6) {
-    digitalWrite(RELAY_PIN, LOW);   // ON
+    digitalWrite(RELAY_PIN, RELAY_ON);
   } else {
-    digitalWrite(RELAY_PIN, HIGH);  // OFF
+    digitalWrite(RELAY_PIN, RELAY_OFF);
   }
   
   delay(60000);  // ตรวจสอบทุกนาที
@@ -117,8 +127,46 @@ void loop() {
 - **⚠️ อันตรายจากไฟฟ้า:** 220V AC อันตรายถึงชีวิต! ต้องระมัดระวังเมื่อต่อไฟ AC
 - บางโมดูลเป็น Active Low (LOW = ON, HIGH = OFF)
 - บางโมดูลเป็น Active High ให้ทดสอบก่อนใช้งานจริง
-- มี Optocoupler แยกวงจรควบคุมออกจากวงจรกำลัง
-- บน Lotus Nano Bot ใช้ D3 หรือ A0-A3 (เป็น Digital Output) ได้
+- รุ่นที่มี Optocoupler จะแยกวงจรควบคุมออกจากวงจรกำลัง
+- บน Lotus Nano Bot ใช้ D3 หรือ A0-A3 (เป็น Digital Output) ได้ หากต่อที่ D3 บัซเซอร์ในตัวอาจมีเสียงคลิกตอนสั่งงาน
+- คอยล์รีเลย์กินไฟราว 70-90 mA จากขา 5V ควรใช้แบตเตอรี่ที่ชาร์จเต็ม
+
+## กิจกรรมการเรียนรู้
+
+### จุดประสงค์การเรียนรู้
+1. นักเรียนต่อ Relay Module และสั่งเปิด/ปิดด้วย Arduino ได้ โดยใช้โหลด DC แรงดันต่ำอย่างปลอดภัย
+2. นักเรียนระบุได้ว่าโมดูลเป็นแบบ Active Low หรือ Active High จากผลการทดลอง
+3. นักเรียนอธิบายความแตกต่างของขา COM, NO และ NC ได้
+
+### ขั้นตอนการทดลอง
+1. ต่อสาย VCC→5V, GND→GND, IN→D3 (ยังไม่ต่อโหลด) แล้วอัปโหลดโค้ดตัวอย่างแรก
+2. ฟังเสียงคลิกและดู LED บนโมดูล เทียบกับข้อความ ON/OFF ใน Serial Monitor
+3. ต่อโหลดแรงดันต่ำ (ถ่าน 3V + LED + ตัวต้านทาน 220Ω) ผ่าน COM และ NO ทดสอบอีกครั้ง
+4. ย้ายสายโหลดจาก NO ไป NC แล้วเปรียบเทียบผล
+
+### ตารางบันทึกผล
+| ครั้งที่ | สภาวะ/การกระทำ | ค่าที่อ่านได้ | ผลที่สังเกตได้ |
+|---|---|---|---|
+| 1 | IN = LOW (ยังไม่ต่อโหลด) | LED โมดูล: | |
+| 2 | IN = HIGH (ยังไม่ต่อโหลด) | LED โมดูล: | |
+| 3 | ต่อโหลดที่ COM-NO แล้วสลับเป็น COM-NC | | |
+
+### คำถามท้ายการทดลอง
+1. รีเลย์ทำงานด้วยหลักการใด จึงใช้สัญญาณ 5V ควบคุมวงจรอื่นได้
+2. ถ้าสั่ง ON แล้ว LED บนโมดูลดับ แต่สั่ง OFF แล้วติด แสดงว่าโมดูลเป็นแบบใด ต้องแก้โค้ดอย่างไร
+3. ถ้าต้องการให้ปั๊มน้ำทำงานเมื่อดินแห้ง ควรต่อโหลดที่ขา NO หรือ NC เพราะอะไร
+
+<details>
+<summary>แนวคำตอบ (สำหรับครู)</summary>
+
+1. กระแสผ่านขดลวดสร้างสนามแม่เหล็กดึงหน้าสัมผัสให้ต่อ/ตัดวงจร วงจรควบคุมกับวงจรโหลดจึงแยกจากกันทางไฟฟ้า
+2. เป็นแบบ Active High ให้แก้ `#define RELAY_ON HIGH` และ `#define RELAY_OFF LOW`
+3. ขา NO เพราะปกติปั๊มจะปิด และทำงานเฉพาะเมื่อสั่งรีเลย์ หากไฟ Arduino ดับปั๊มจะหยุดเอง (ปลอดภัยกว่า)
+
+</details>
+
+### ภารกิจท้าทาย
+- ใช้ปุ่ม OK ในตัว (D2) สั่ง Toggle รีเลย์ (ต่อ IN ที่ A0) และให้บัซเซอร์ในตัว (D3) ดังสั้น ๆ ทุกครั้งที่สถานะรีเลย์เปลี่ยน (ใช้โหลด DC แรงดันต่ำเท่านั้น)
 
 ## รูปภาพ
 
